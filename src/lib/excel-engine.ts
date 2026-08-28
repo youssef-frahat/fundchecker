@@ -44,6 +44,7 @@ function extractNumericValue(cell: ExcelJS.Cell): number {
 
 /**
  * Parses raw trading Excel file into RawTransactionRow objects.
+ * Intelligently scans the first 10 rows to detect the exact header row.
  */
 export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]> {
   const buffer = await file.arrayBuffer();
@@ -55,6 +56,7 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
     throw new Error('Workbook contains no data rows.');
   }
 
+  // Default Column Indices (1-indexed based on 39-column specification)
   let colRequestId = 1;
   let colMubasherNo = 2;
   let colCustomerName = 3;
@@ -67,69 +69,89 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
   let colIsinCode = 18;
   let colOrderDate = 25;
 
-  const headerRow = worksheet.getRow(1);
+  let headerRowNumber = 1;
   let foundHeaders = false;
 
-  headerRow.eachCell((cell, colNumber) => {
-    const text = extractCellValue(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (!text) return;
+  // Scan first 10 rows to find which row actually contains column headers
+  for (let r = 1; r <= Math.min(10, worksheet.rowCount); r++) {
+    const row = worksheet.getRow(r);
+    let matchCount = 0;
 
-    if (text === 'requestid' || text === 'reqid' || text === 'request') {
-      colRequestId = colNumber;
+    row.eachCell((cell, colNumber) => {
+      const text = extractCellValue(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!text) return;
+
+      if (text.includes('request') || text.includes('reqid')) {
+        colRequestId = colNumber;
+        matchCount++;
+      } else if (text.includes('mubasher') || text.includes('externalcode')) {
+        colMubasherNo = colNumber;
+        matchCount++;
+      } else if (text.includes('customer') || text.includes('client') || text === 'name') {
+        colCustomerName = colNumber;
+        matchCount++;
+      } else if (text.includes('side') || text.includes('orderside') || text.includes('type')) {
+        colOrderSide = colNumber;
+        matchCount++;
+      } else if (text === 'symbol' || text === 'symbolcode' || text === 'sym') {
+        colSymbol = colNumber;
+        matchCount++;
+      } else if (text.includes('symboldescription') || text.includes('product') || text.includes('fundname') || text.includes('description')) {
+        colSymbolDesc = colNumber;
+        matchCount++;
+      } else if (text.includes('quantity') || text === 'qty') {
+        colQuantity = colNumber;
+        matchCount++;
+      } else if (text.includes('price') || text.includes('icprice')) {
+        colPrice = colNumber;
+        matchCount++;
+      } else if (text.includes('ordervalue') || text.includes('value') || text.includes('amount')) {
+        colOrderValue = colNumber;
+        matchCount++;
+      } else if (text.includes('isin')) {
+        colIsinCode = colNumber;
+        matchCount++;
+      } else if (text.includes('date')) {
+        colOrderDate = colNumber;
+        matchCount++;
+      }
+    });
+
+    if (matchCount >= 2) {
+      headerRowNumber = r;
       foundHeaders = true;
-    } else if (text === 'mubasherno' || text === 'mubasher' || text === 'externalcode') {
-      colMubasherNo = colNumber;
-      foundHeaders = true;
-    } else if (text === 'customername' || text === 'customer' || text === 'clientname' || text === 'name') {
-      colCustomerName = colNumber;
-      foundHeaders = true;
-    } else if (text === 'orderside' || text === 'side' || text === 'transactiontype') {
-      colOrderSide = colNumber;
-      foundHeaders = true;
-    } else if (text === 'symbol' || text === 'symbolcode' || text === 'sym') {
-      colSymbol = colNumber;
-      foundHeaders = true;
-    } else if (text === 'symboldescription' || text === 'description' || text === 'product' || text === 'productname' || text === 'fundname') {
-      colSymbolDesc = colNumber;
-      foundHeaders = true;
-    } else if (text === 'quantity' || text === 'qty') {
-      colQuantity = colNumber;
-      foundHeaders = true;
-    } else if (text === 'price' || text === 'icprice') {
-      colPrice = colNumber;
-      foundHeaders = true;
-    } else if (text === 'ordervalue' || text === 'value' || text === 'transactionvalue' || text === 'amount') {
-      colOrderValue = colNumber;
-      foundHeaders = true;
-    } else if (text === 'isincode' || text === 'isin') {
-      colIsinCode = colNumber;
-      foundHeaders = true;
-    } else if (text === 'orderdate' || text === 'date' || text === 'transactiondate') {
-      colOrderDate = colNumber;
-      foundHeaders = true;
+      break;
     }
-  });
+  }
 
   const rows: RawTransactionRow[] = [];
   const fileId = `file-${Date.now()}`;
 
   worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1 && foundHeaders) return;
+    // Skip header row and any preceding title rows
+    if (foundHeaders && rowNumber <= headerRowNumber) return;
+    if (!foundHeaders && rowNumber === 1) return;
 
     const requestId = extractCellValue(row.getCell(colRequestId)) || `REQ-${rowNumber}`;
     const mubasherNo = extractCellValue(row.getCell(colMubasherNo));
     const customerName = extractCellValue(row.getCell(colCustomerName));
     const rawOrderSide = extractCellValue(row.getCell(colOrderSide));
-    const symbol = extractCellValue(row.getCell(colSymbol));
-    const symbolDescription = extractCellValue(row.getCell(colSymbolDesc));
+    const rawSymbol = extractCellValue(row.getCell(colSymbol));
+    const rawSymbolDesc = extractCellValue(row.getCell(colSymbolDesc));
     const quantity = extractNumericValue(row.getCell(colQuantity));
     const price = extractNumericValue(row.getCell(colPrice));
     const orderValue = extractNumericValue(row.getCell(colOrderValue));
     const isinCode = extractCellValue(row.getCell(colIsinCode));
     const orderDateRaw = extractCellValue(row.getCell(colOrderDate));
 
-    const effectiveSymbol = symbol || symbolDescription || `SYM-${rowNumber}`;
-    const effectiveDescription = symbolDescription || symbol || effectiveSymbol;
+    // Intelligent symbol and description resolution
+    const effectiveSymbol = rawSymbol || rawSymbolDesc || 'UNKNOWN_SYMBOL';
+    const effectiveDescription = rawSymbolDesc || rawSymbol || effectiveSymbol;
+
+    // Ignore header re-occurrences or total rows
+    if (effectiveSymbol.toLowerCase().includes('symbol') || customerName.toLowerCase().includes('total')) {
+      return;
+    }
 
     let orderSide = rawOrderSide.toUpperCase();
     if (!orderSide || (!orderSide.includes('BUY') && !orderSide.includes('SELL'))) {
@@ -140,7 +162,7 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
       orderSide = 'SELL';
     }
 
-    if (requestId || effectiveSymbol || orderValue > 0) {
+    if (requestId || effectiveSymbol !== 'UNKNOWN_SYMBOL' || orderValue > 0) {
       rows.push({
         id: `tx-${rowNumber}-${Date.now()}`,
         fileId,
@@ -162,9 +184,6 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
   return rows;
 }
 
-/**
- * Generates an Excel workbook containing ONLY a single selected Fund's transaction sheet.
- */
 export async function exportSingleFundTransactionSheet(
   allRows: GeneratedTransactionRow[],
   productName: string
@@ -229,10 +248,6 @@ export async function exportSingleFundTransactionSheet(
   });
 }
 
-/**
- * Generates an Excel workbook with sheets per Product sorted alphabetically,
- * reproducing the exact logic of VBA Sub ExportPerProduct_PerSheet_FromF_Alphabetical.
- */
 export async function exportTransactionSheetsPerProduct(
   rows: GeneratedTransactionRow[]
 ): Promise<Blob> {
@@ -311,9 +326,6 @@ export async function exportTransactionSheetsPerProduct(
   });
 }
 
-/**
- * Generates an Excel Netting / Transfer Sheet matching Screenshot 1 visual layout.
- */
 export async function exportNettingSheet(
   nettingRows: NettingRow[],
   totalBuy: number,

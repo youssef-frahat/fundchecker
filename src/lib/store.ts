@@ -3,37 +3,49 @@
 import {
   AuditLog,
   ChecklistItem,
-  ExceptionRecord,
   Fund,
-  FundRule,
   ReferenceData,
-  ReviewApproval,
   User,
 } from './types';
-import { DEFAULT_FUND_RULES } from './rule-engine';
 
-// Initial Users
+// Requested System Users
 export const INITIAL_USERS: User[] = [
   {
-    id: 'user-admin-1',
-    email: 'admin@investment.com',
-    fullName: 'Super Administrator',
+    id: 'user-yf-1',
+    email: 'youssef.farahat@investment.com',
+    fullName: 'يوسف فرحات',
     role: 'SUPER_ADMIN',
     status: 'ACTIVE',
     createdAt: '2026-01-01T00:00:00Z',
   },
   {
-    id: 'user-ops-1',
-    email: 'ops.maker@investment.com',
-    fullName: 'Ahmed Hassan (Maker)',
+    id: 'user-as-2',
+    email: 'ahmed.sayed@investment.com',
+    fullName: 'احمد سيد',
+    role: 'SUPER_ADMIN',
+    status: 'ACTIVE',
+    createdAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'user-ag-3',
+    email: 'ahmed.gamal@investment.com',
+    fullName: 'احمد جمال',
     role: 'OPERATIONS_USER',
     status: 'ACTIVE',
     createdAt: '2026-01-01T00:00:00Z',
   },
   {
-    id: 'user-ops-2',
-    email: 'ops.checker@investment.com',
-    fullName: 'Mariam Ali (Checker)',
+    id: 'user-hm-4',
+    email: 'hussein.mohamed@investment.com',
+    fullName: 'حسين محمد',
+    role: 'OPERATIONS_USER',
+    status: 'ACTIVE',
+    createdAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'user-am-5',
+    email: 'abdallah.mohamed@investment.com',
+    fullName: 'عبدالله محمد',
     role: 'OPERATIONS_USER',
     status: 'ACTIVE',
     createdAt: '2026-01-01T00:00:00Z',
@@ -88,8 +100,8 @@ export const INITIAL_CHECKLISTS: ChecklistItem[] = [
     priority: 'CRITICAL',
     mandatory: true,
     isCompleted: true,
-    completedBy: 'user-ops-1',
-    completedByName: 'Ahmed Hassan (Maker)',
+    completedBy: 'youssef.farahat@investment.com',
+    completedByName: 'يوسف فرحات',
     completedAt: '2026-08-28T09:15:00Z',
   },
   {
@@ -101,8 +113,8 @@ export const INITIAL_CHECKLISTS: ChecklistItem[] = [
     priority: 'HIGH',
     mandatory: true,
     isCompleted: true,
-    completedBy: 'user-ops-1',
-    completedByName: 'Ahmed Hassan (Maker)',
+    completedBy: 'ahmed.gamal@investment.com',
+    completedByName: 'احمد جمال',
     completedAt: '2026-08-28T10:45:00Z',
   },
   {
@@ -130,8 +142,8 @@ export const INITIAL_CHECKLISTS: ChecklistItem[] = [
 export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   {
     id: 'log-1',
-    userId: 'user-admin-1',
-    userName: 'Super Administrator',
+    userId: 'user-yf-1',
+    userName: 'يوسف فرحات',
     action: 'SYSTEM_BOOT',
     entityName: 'SYSTEM',
     ipAddress: '127.0.0.1',
@@ -140,8 +152,8 @@ export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   },
   {
     id: 'log-2',
-    userId: 'user-ops-1',
-    userName: 'Ahmed Hassan (Maker)',
+    userId: 'user-ag-3',
+    userName: 'احمد جمال',
     action: 'CHECKLIST_COMPLETE',
     entityName: 'CHECKLIST_ITEM',
     entityId: 'chk-1',

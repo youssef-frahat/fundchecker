@@ -1,4 +1,4 @@
-// Main Workspace Component (White & Emerald Green Theme with Granular Per-Fund Review & Sheet Exporter)
+// Main Workspace Component (White & Emerald Green Theme with Real Auth, Supabase DB & User Admin)
 
 'use client';
 
@@ -13,6 +13,7 @@ import { ChecklistEngine } from '@/components/checklists/ChecklistEngine';
 import { ExceptionCenter } from '@/components/exceptions/ExceptionCenter';
 import { AuditTrailViewer } from '@/components/audit/AuditTrailViewer';
 import { ReferenceDataAdmin } from '@/components/admin/ReferenceDataAdmin';
+import { UserManagementAdmin } from '@/components/admin/UserManagementAdmin';
 
 import {
   AuditLog,
@@ -22,6 +23,7 @@ import {
   RawTransactionRow,
   ReferenceData,
   UploadedFileRecord,
+  User as UserType,
   UserRole,
 } from '@/lib/types';
 import {
@@ -31,7 +33,7 @@ import {
   saveUploadedFileToDb,
   updateNavPriceInDb,
 } from '@/lib/db-service';
-import { INITIAL_AUDIT_LOGS, INITIAL_CHECKLISTS } from '@/lib/store';
+import { INITIAL_AUDIT_LOGS, INITIAL_CHECKLISTS, INITIAL_USERS } from '@/lib/store';
 import { applyFundRules } from '@/lib/rule-engine';
 import { calculateNettingSheet, FundReviewState } from '@/lib/netting-engine';
 
@@ -44,6 +46,7 @@ export default function InvestmentPlatformPage() {
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
 
+  const [users, setUsers] = useState<UserType[]>(INITIAL_USERS);
   const [referenceDataList, setReferenceDataList] = useState<ReferenceData[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileRecord[]>([]);
   const [rawTransactions, setRawTransactions] = useState<RawTransactionRow[]>([]);
@@ -51,7 +54,7 @@ export default function InvestmentPlatformPage() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
   const [exceptions, setExceptions] = useState<ExceptionRecord[]>([]);
 
-  // Netting Review Workflow State (Global Batch & Per-Fund Granular)
+  // Netting Review Workflow State
   const [reviewStatus, setReviewStatus] = useState<'DRAFT' | 'GENERATED' | 'UNDER_REVIEW' | 'APPROVED'>('DRAFT');
   const [makerName, setMakerName] = useState<string>('');
   const [checkerName, setCheckerName] = useState<string>('');
@@ -156,12 +159,10 @@ export default function InvestmentPlatformPage() {
 
   const nettingSummary = calculateNettingSheet(rawTransactions, referenceDataList, 'symbol', perFundReviewStates);
 
-  // Global Batch Maker Submit
   const handleMakerSubmit = () => {
     setReviewStatus('UNDER_REVIEW');
-    setMakerName(currentUser?.fullName || 'Ahmed Hassan (Maker)');
+    setMakerName(currentUser?.fullName || 'Maker');
 
-    // Update all funds to UNDER_REVIEW
     const updatedStates: Record<string, FundReviewState> = {};
     nettingSummary.rows.forEach((r) => {
       updatedStates[r.symbolCode] = {
@@ -173,18 +174,16 @@ export default function InvestmentPlatformPage() {
     addAuditLog('SUBMIT_REVIEW', 'TRANSFER_SHEET', 'sheet-all', { status: 'UNDER_REVIEW' });
   };
 
-  // Global Batch Checker Approve
   const handleCheckerApprove = () => {
     setReviewStatus('APPROVED');
-    setCheckerName(currentUser?.fullName || 'Checker Supervisor');
+    setCheckerName(currentUser?.fullName || 'Checker');
 
-    // Update all funds to APPROVED
     const updatedStates: Record<string, FundReviewState> = {};
     nettingSummary.rows.forEach((r) => {
       updatedStates[r.symbolCode] = {
         reviewStatus: 'APPROVED',
         makerName: makerName || 'Maker',
-        checkerName: currentUser?.fullName || 'Checker Supervisor',
+        checkerName: currentUser?.fullName || 'Checker',
         approvedAt: new Date().toISOString(),
       };
     });
@@ -192,7 +191,6 @@ export default function InvestmentPlatformPage() {
     addAuditLog('APPROVE_TRANSFER', 'TRANSFER_SHEET', 'sheet-all', { status: 'APPROVED' });
   };
 
-  // Granular Per-Fund Review Handler
   const handleReviewSingleFund = (symbolCode: string, newStatus: 'UNDER_REVIEW' | 'APPROVED') => {
     setPerFundReviewStates((prev) => ({
       ...prev,
@@ -266,6 +264,25 @@ export default function InvestmentPlatformPage() {
     );
     await updateNavPriceInDb(id, newPrice);
     addAuditLog('UPDATE_NAV_PRICE', 'REFERENCE_DATA', id, { newPrice });
+  };
+
+  const handleAddUser = (newUser: Omit<UserType, 'id' | 'createdAt'>) => {
+    const u: UserType = {
+      ...newUser,
+      id: `user-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+    };
+    setUsers((prev) => [u, ...prev]);
+    addAuditLog('CREATE_USER', 'USER', u.id, { email: u.email, role: u.role });
+  };
+
+  const handleToggleUserStatus = (id: string) => {
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === id ? { ...u, status: u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' } : u
+      )
+    );
+    addAuditLog('TOGGLE_USER_STATUS', 'USER', id);
   };
 
   if (!currentUser) {
@@ -347,11 +364,18 @@ export default function InvestmentPlatformPage() {
         {activeTab === 'audit' && <AuditTrailViewer logs={auditLogs} />}
 
         {activeTab === 'admin' && currentUser.role === 'SUPER_ADMIN' && (
-          <ReferenceDataAdmin
-            referenceDataList={referenceDataList}
-            onAddReferenceData={handleAddReferenceData}
-            onUpdateNavPrice={handleUpdateNavPrice}
-          />
+          <div className="space-y-8">
+            <UserManagementAdmin
+              users={users}
+              onAddUser={handleAddUser}
+              onToggleUserStatus={handleToggleUserStatus}
+            />
+            <ReferenceDataAdmin
+              referenceDataList={referenceDataList}
+              onAddReferenceData={handleAddReferenceData}
+              onUpdateNavPrice={handleUpdateNavPrice}
+            />
+          </div>
         )}
       </main>
     </div>
