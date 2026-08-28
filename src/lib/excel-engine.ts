@@ -15,7 +15,42 @@ export async function computeFileHash(file: File): Promise<string> {
 }
 
 /**
- * Parses raw trading Excel file (up to 39 source columns) into RawTransactionRow objects.
+ * Safely extracts raw string text from any ExcelJS cell type (RichText, Formula, Date, etc.)
+ */
+function extractCellValue(cell: ExcelJS.Cell): string {
+  if (cell.value === null || cell.value === undefined) return '';
+  if (cell.value instanceof Date) return cell.value.toISOString();
+  if (typeof cell.value === 'object') {
+    if ('result' in cell.value && cell.value.result !== undefined && cell.value.result !== null) {
+      return String(cell.value.result).trim();
+    }
+    if ('text' in cell.value && cell.value.text !== undefined) {
+      return String(cell.value.text).trim();
+    }
+    if ('richText' in cell.value && Array.isArray((cell.value as { richText: unknown[] }).richText)) {
+      return (cell.value as { richText: { text: string }[] }).richText
+        .map((rt) => rt.text)
+        .join('')
+        .trim();
+    }
+  }
+  return String(cell.value).trim();
+}
+
+/**
+ * Safely extracts numeric value from an ExcelJS cell.
+ */
+function extractNumericValue(cell: ExcelJS.Cell): number {
+  const rawStr = extractCellValue(cell);
+  if (!rawStr) return 0;
+  const cleaned = rawStr.replace(/,/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * Parses raw trading Excel file into RawTransactionRow objects.
+ * Dynamically detects column headers or falls back to standard 39-column index locations.
  */
 export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]> {
   const buffer = await file.arrayBuffer();
@@ -23,54 +58,82 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
   await workbook.xlsx.load(buffer);
 
   const worksheet = workbook.worksheets[0];
-  if (!worksheet) {
-    throw new Error('Workbook contains no worksheets.');
+  if (!worksheet || worksheet.rowCount <= 1) {
+    throw new Error('Workbook contains no data rows.');
   }
+
+  // Header Column Indices (1-indexed)
+  let colRequestId = 1;
+  let colMubasherNo = 2;
+  let colCustomerName = 3;
+  let colOrderSide = 4;
+  let colSymbol = 5;
+  let colSymbolDesc = 6;
+  let colQuantity = 10;
+  let colPrice = 11;
+  let colOrderValue = 12;
+  let colIsinCode = 18;
+  let colOrderDate = 25;
+
+  // Inspect Row 1 to dynamically detect header positions if present
+  const headerRow = worksheet.getRow(1);
+  headerRow.eachCell((cell, colNumber) => {
+    const text = extractCellValue(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (text.includes('requestid') || text.includes('reqid')) colRequestId = colNumber;
+    else if (text.includes('mubasherno') || text.includes('mubasher')) colMubasherNo = colNumber;
+    else if (text.includes('customername') || text.includes('customer') || text.includes('client')) colCustomerName = colNumber;
+    else if (text.includes('orderside') || text.includes('side') || text.includes('type')) colOrderSide = colNumber;
+    else if (text === 'symbol' || text.includes('symbolcode')) colSymbol = colNumber;
+    else if (text.includes('symboldescription') || text.includes('product') || text.includes('fundname')) colSymbolDesc = colNumber;
+    else if (text.includes('quantity') || text === 'qty') colQuantity = colNumber;
+    else if (text.includes('price') || text.includes('icprice')) colPrice = colNumber;
+    else if (text.includes('ordervalue') || text.includes('value') || text.includes('amount')) colOrderValue = colNumber;
+    else if (text.includes('isin')) colIsinCode = colNumber;
+    else if (text.includes('orderdate') || text.includes('date')) colOrderDate = colNumber;
+  });
 
   const rows: RawTransactionRow[] = [];
   const fileId = `file-${Date.now()}`;
 
-  // Process rows starting from row 2 (skipping headers)
   worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return; // Skip header
+    if (rowNumber === 1) return; // Skip header row
 
-    // Map column values (ExcelJS is 1-indexed)
-    // Col 1: Request Id, Col 2: Mubasher No, Col 3: Customer Name, Col 4: Order Side
-    // Col 5: Symbol, Col 6: Symbol Description, Col 10: Quantity, Col 11: Price, Col 12: Order Value
-    const requestId = String(row.getCell(1).value || `REQ-${rowNumber}`).trim();
-    const mubasherNo = String(row.getCell(2).value || '').trim();
-    const customerName = String(row.getCell(3).value || '').trim();
-    const orderSide = String(row.getCell(4).value || '').trim();
-    const symbol = String(row.getCell(5).value || '').trim();
-    const symbolDescription = String(row.getCell(6).value || symbol).trim();
-    const quantity = Number(row.getCell(10).value) || 0;
-    const price = Number(row.getCell(11).value) || 0;
-    const orderValue = Number(row.getCell(12).value) || 0;
-    const isinCode = String(row.getCell(18).value || '').trim();
-    const rawDate = row.getCell(26).value; // Order Date
+    const requestId = extractCellValue(row.getCell(colRequestId)) || `REQ-${rowNumber}`;
+    const mubasherNo = extractCellValue(row.getCell(colMubasherNo));
+    const customerName = extractCellValue(row.getCell(colCustomerName));
+    const rawOrderSide = extractCellValue(row.getCell(colOrderSide));
+    const symbol = extractCellValue(row.getCell(colSymbol));
+    const symbolDescription = extractCellValue(row.getCell(colSymbolDesc)) || symbol || 'Trading Product';
+    const quantity = extractNumericValue(row.getCell(colQuantity));
+    const price = extractNumericValue(row.getCell(colPrice));
+    const orderValue = extractNumericValue(row.getCell(colOrderValue));
+    const isinCode = extractCellValue(row.getCell(colIsinCode));
+    const orderDateRaw = extractCellValue(row.getCell(colOrderDate));
 
-    let orderDate = new Date().toISOString();
-    if (rawDate instanceof Date) {
-      orderDate = rawDate.toISOString();
-    } else if (typeof rawDate === 'string' && rawDate) {
-      orderDate = new Date(rawDate).toISOString();
+    // Determine normalized order side (BUY vs SELL)
+    let orderSide = rawOrderSide.toUpperCase();
+    if (!orderSide || (orderSide !== 'BUY' && orderSide !== 'SELL')) {
+      orderSide = 'BUY'; // Default fallback
     }
 
-    if (requestId && symbol) {
+    const effectiveSymbol = symbol || symbolDescription || `SYM-${rowNumber}`;
+
+    // Valid row check
+    if (requestId || effectiveSymbol || orderValue > 0) {
       rows.push({
         id: `tx-${rowNumber}-${Date.now()}`,
         fileId,
         requestId,
-        mubasherNo,
-        customerName,
+        mubasherNo: mubasherNo || `EXT-${rowNumber}`,
+        customerName: customerName || 'Valued Investor',
         orderSide,
-        symbol,
+        symbol: effectiveSymbol,
         symbolDescription,
-        quantity,
-        price,
-        orderValue,
+        quantity: quantity || (price > 0 ? Math.round(orderValue / price) : 1),
+        price: price || (quantity > 0 ? orderValue / quantity : 0),
+        orderValue: orderValue || quantity * price,
         isinCode,
-        orderDate,
+        orderDate: orderDateRaw || new Date().toISOString(),
       });
     }
   });
@@ -104,11 +167,10 @@ export async function exportTransactionSheetsPerProduct(
   );
 
   for (const prodKey of sortedProducts) {
-    // Truncate to 31 chars safe name for sheet tab (VBA safeName)
     const safeSheetName = prodKey.substring(0, 31).replace(/[\/*?:[\]]/g, '_');
     const ws = workbook.addWorksheet(safeSheetName);
 
-    // Set 11 Target Headers (VBA Header Columns A-K)
+    // Headers Column A-K
     ws.addRow([
       'Transaction ID',
       'Transaction Type',
@@ -123,7 +185,6 @@ export async function exportTransactionSheetsPerProduct(
       'Fees',
     ]);
 
-    // Header styling
     const headerRow = ws.getRow(1);
     headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
     headerRow.fill = {
@@ -149,7 +210,6 @@ export async function exportTransactionSheetsPerProduct(
       ]);
     }
 
-    // Auto-fit column widths
     ws.columns.forEach((col) => {
       let maxLen = 12;
       col.eachCell!({ includeEmpty: true }, (cell) => {
@@ -178,7 +238,6 @@ export async function exportNettingSheet(
   const workbook = new ExcelJS.Workbook();
   const ws = workbook.addWorksheet('Netting Transfer Sheet');
 
-  // Headers
   ws.addRow(['Symbol Code', 'Symbol Name', 'Actual Symbol', 'Buy', 'Sell', 'NET']);
 
   const headerRow = ws.getRow(1);
@@ -208,7 +267,6 @@ export async function exportNettingSheet(
     }
   }
 
-  // Summary row
   const summaryRow = ws.addRow([
     'TOTAL SUMMARY',
     '',
