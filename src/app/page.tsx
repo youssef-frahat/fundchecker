@@ -53,12 +53,22 @@ export default function InvestmentPlatformPage() {
     setUploadedFiles((prev) => [fileRecord, ...prev]);
     setRawTransactions((prev) => [...parsedRows, ...prev]);
 
-    // Check for unmapped symbols to populate Exception Queue
+    // Flexible reference data matching (matches Symbol Code, Actual Symbol, or Symbol Name)
     const newExceptions: ExceptionRecord[] = [];
     parsedRows.forEach((row) => {
+      const symClean = row.symbol.trim().toLowerCase();
+      const descClean = row.symbolDescription.trim().toLowerCase();
+
       const match = referenceDataList.find(
-        (r) => r.symbolCode.toLowerCase() === row.symbol.toLowerCase() || r.actualSymbol.toLowerCase() === row.symbol.toLowerCase()
+        (r) =>
+          r.symbolCode.toLowerCase() === symClean ||
+          r.actualSymbol.toLowerCase() === symClean ||
+          r.symbolName.toLowerCase() === descClean ||
+          r.symbolName.toLowerCase() === symClean ||
+          r.symbolCode.toLowerCase() === descClean ||
+          r.actualSymbol.toLowerCase() === descClean
       );
+
       if (!match) {
         newExceptions.push({
           id: `ex-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -117,10 +127,16 @@ export default function InvestmentPlatformPage() {
 
   // Evaluate Dynamic Rules to generate output transaction rows
   const generatedRows: GeneratedTransactionRow[] = rawTransactions.map((tx) => {
+    const symClean = tx.symbol.trim().toLowerCase();
+    const descClean = tx.symbolDescription.trim().toLowerCase();
     const refMatch = referenceDataList.find(
-      (r) => r.symbolCode.toLowerCase() === tx.symbol.toLowerCase() || r.actualSymbol.toLowerCase() === tx.symbol.toLowerCase()
+      (r) =>
+        r.symbolCode.toLowerCase() === symClean ||
+        r.actualSymbol.toLowerCase() === symClean ||
+        r.symbolName.toLowerCase() === descClean ||
+        r.symbolName.toLowerCase() === symClean
     );
-    const fundType = refMatch ? 'T0' : 'T0'; // Default T0 rule
+    const fundType = refMatch ? 'T0' : 'T0';
     return applyFundRules(tx, fundType);
   });
 

@@ -62,63 +62,95 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
     throw new Error('Workbook contains no data rows.');
   }
 
-  // Header Column Indices (1-indexed)
-  let colRequestId = 1;
-  let colMubasherNo = 2;
-  let colCustomerName = 3;
-  let colOrderSide = 4;
-  let colSymbol = 5;
-  let colSymbolDesc = 6;
-  let colQuantity = 10;
-  let colPrice = 11;
-  let colOrderValue = 12;
-  let colIsinCode = 18;
-  let colOrderDate = 25;
+  // Default Column Indices (1-indexed based on 39-column specification)
+  let colRequestId = 1;      // Col A: Request Id
+  let colMubasherNo = 2;     // Col B: Mubasher No
+  let colCustomerName = 3;   // Col C: Customer Name
+  let colOrderSide = 4;      // Col D: Order Side
+  let colSymbol = 5;         // Col E: Symbol
+  let colSymbolDesc = 6;     // Col F: Symbol Description
+  let colQuantity = 10;      // Col J: Quantity
+  let colPrice = 11;         // Col K: Price
+  let colOrderValue = 12;    // Col L: Order Value
+  let colIsinCode = 18;      // Col R: ISIN Code
+  let colOrderDate = 25;     // Col Y: Order Date
 
-  // Inspect Row 1 to dynamically detect header positions if present
+  // Inspect Row 1 to dynamically detect exact header positions
   const headerRow = worksheet.getRow(1);
+  let foundHeaders = false;
+
   headerRow.eachCell((cell, colNumber) => {
     const text = extractCellValue(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (text.includes('requestid') || text.includes('reqid')) colRequestId = colNumber;
-    else if (text.includes('mubasherno') || text.includes('mubasher')) colMubasherNo = colNumber;
-    else if (text.includes('customername') || text.includes('customer') || text.includes('client')) colCustomerName = colNumber;
-    else if (text.includes('orderside') || text.includes('side') || text.includes('type')) colOrderSide = colNumber;
-    else if (text === 'symbol' || text.includes('symbolcode')) colSymbol = colNumber;
-    else if (text.includes('symboldescription') || text.includes('product') || text.includes('fundname')) colSymbolDesc = colNumber;
-    else if (text.includes('quantity') || text === 'qty') colQuantity = colNumber;
-    else if (text.includes('price') || text.includes('icprice')) colPrice = colNumber;
-    else if (text.includes('ordervalue') || text.includes('value') || text.includes('amount')) colOrderValue = colNumber;
-    else if (text.includes('isin')) colIsinCode = colNumber;
-    else if (text.includes('orderdate') || text.includes('date')) colOrderDate = colNumber;
+    if (!text) return;
+
+    if (text === 'requestid' || text === 'reqid' || text === 'request') {
+      colRequestId = colNumber;
+      foundHeaders = true;
+    } else if (text === 'mubasherno' || text === 'mubasher' || text === 'externalcode') {
+      colMubasherNo = colNumber;
+      foundHeaders = true;
+    } else if (text === 'customername' || text === 'customer' || text === 'clientname' || text === 'name') {
+      colCustomerName = colNumber;
+      foundHeaders = true;
+    } else if (text === 'orderside' || text === 'side' || text === 'transactiontype') {
+      colOrderSide = colNumber;
+      foundHeaders = true;
+    } else if (text === 'symbol' || text === 'symbolcode' || text === 'sym') {
+      colSymbol = colNumber;
+      foundHeaders = true;
+    } else if (text === 'symboldescription' || text === 'description' || text === 'product' || text === 'productname' || text === 'fundname') {
+      colSymbolDesc = colNumber;
+      foundHeaders = true;
+    } else if (text === 'quantity' || text === 'qty') {
+      colQuantity = colNumber;
+      foundHeaders = true;
+    } else if (text === 'price' || text === 'icprice') {
+      colPrice = colNumber;
+      foundHeaders = true;
+    } else if (text === 'ordervalue' || text === 'value' || text === 'transactionvalue' || text === 'amount') {
+      colOrderValue = colNumber;
+      foundHeaders = true;
+    } else if (text === 'isincode' || text === 'isin') {
+      colIsinCode = colNumber;
+      foundHeaders = true;
+    } else if (text === 'orderdate' || text === 'date' || text === 'transactiondate') {
+      colOrderDate = colNumber;
+      foundHeaders = true;
+    }
   });
 
   const rows: RawTransactionRow[] = [];
   const fileId = `file-${Date.now()}`;
 
   worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return; // Skip header row
+    if (rowNumber === 1 && foundHeaders) return; // Skip header row if headers detected
 
     const requestId = extractCellValue(row.getCell(colRequestId)) || `REQ-${rowNumber}`;
     const mubasherNo = extractCellValue(row.getCell(colMubasherNo));
     const customerName = extractCellValue(row.getCell(colCustomerName));
     const rawOrderSide = extractCellValue(row.getCell(colOrderSide));
     const symbol = extractCellValue(row.getCell(colSymbol));
-    const symbolDescription = extractCellValue(row.getCell(colSymbolDesc)) || symbol || 'Trading Product';
+    const symbolDescription = extractCellValue(row.getCell(colSymbolDesc));
     const quantity = extractNumericValue(row.getCell(colQuantity));
     const price = extractNumericValue(row.getCell(colPrice));
     const orderValue = extractNumericValue(row.getCell(colOrderValue));
     const isinCode = extractCellValue(row.getCell(colIsinCode));
     const orderDateRaw = extractCellValue(row.getCell(colOrderDate));
 
+    // Determine effective symbol and product description
+    const effectiveSymbol = symbol || symbolDescription || `SYM-${rowNumber}`;
+    const effectiveDescription = symbolDescription || symbol || effectiveSymbol;
+
     // Determine normalized order side (BUY vs SELL)
     let orderSide = rawOrderSide.toUpperCase();
-    if (!orderSide || (orderSide !== 'BUY' && orderSide !== 'SELL')) {
-      orderSide = 'BUY'; // Default fallback
+    if (!orderSide || (!orderSide.includes('BUY') && !orderSide.includes('SELL'))) {
+      orderSide = 'BUY'; // Fallback default
+    } else if (orderSide.includes('BUY')) {
+      orderSide = 'BUY';
+    } else if (orderSide.includes('SELL')) {
+      orderSide = 'SELL';
     }
 
-    const effectiveSymbol = symbol || symbolDescription || `SYM-${rowNumber}`;
-
-    // Valid row check
     if (requestId || effectiveSymbol || orderValue > 0) {
       rows.push({
         id: `tx-${rowNumber}-${Date.now()}`,
@@ -128,7 +160,7 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
         customerName: customerName || 'Valued Investor',
         orderSide,
         symbol: effectiveSymbol,
-        symbolDescription,
+        symbolDescription: effectiveDescription,
         quantity: quantity || (price > 0 ? Math.round(orderValue / price) : 1),
         price: price || (quantity > 0 ? orderValue / quantity : 0),
         orderValue: orderValue || quantity * price,
