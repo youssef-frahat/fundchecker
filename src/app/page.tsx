@@ -1,4 +1,4 @@
-// Main Workspace Component (White & Emerald Green Theme with Real Auth, Supabase DB & User Admin)
+// Main Workspace Component (White & Emerald Green Theme with Real Auth, Supabase DB & System Health)
 
 'use client';
 
@@ -14,6 +14,7 @@ import { ExceptionCenter } from '@/components/exceptions/ExceptionCenter';
 import { AuditTrailViewer } from '@/components/audit/AuditTrailViewer';
 import { ReferenceDataAdmin } from '@/components/admin/ReferenceDataAdmin';
 import { UserManagementAdmin } from '@/components/admin/UserManagementAdmin';
+import { SystemHealthAdmin } from '@/components/admin/SystemHealthAdmin';
 
 import {
   AuditLog,
@@ -365,6 +366,7 @@ export default function InvestmentPlatformPage() {
 
         {activeTab === 'admin' && currentUser.role === 'SUPER_ADMIN' && (
           <div className="space-y-8">
+            <SystemHealthAdmin />
             <UserManagementAdmin
               users={users}
               onAddUser={handleAddUser}

@@ -1,4 +1,4 @@
-// Investment Management Platform - Domain Models & Types
+// Investment Management Platform - Commercial Enterprise Domain Models
 
 export type UserRole = 'SUPER_ADMIN' | 'OPERATIONS_USER';
 
@@ -12,13 +12,13 @@ export interface User {
   createdAt: string;
 }
 
-export type SettlementType = 'T0' | 'T1' | string;
+export type SettlementType = 'T0' | 'T1' | 'T2' | 'T3' | 'DVP' | string;
 
 export interface Fund {
   id: string;
   fundCode: string; // e.g. "1001", "AHLAC"
   fundName: string; // e.g. "AZ - ADKHAR"
-  fundType: SettlementType; // "T0", "T1"
+  fundType: SettlementType; // "T0", "T1", "T2", "DVP"
   status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
   createdAt: string;
 }
@@ -92,6 +92,7 @@ export interface NettingRow {
   makerName?: string;
   checkerName?: string;
   approvedAt?: string;
+  digitalDeclarationSigned?: boolean;
 }
 
 export interface ReviewApproval {
@@ -108,6 +109,7 @@ export interface ReviewApproval {
   reopenedBy?: string;
   reopenedAt?: string;
   reopenReason?: string;
+  digitalDeclarationText?: string;
 }
 
 export interface UploadedFileRecord {
@@ -165,4 +167,12 @@ export interface AuditLog {
   newValues?: Record<string, unknown>;
   ipAddress: string;
   timestampUtc: string;
+}
+
+export interface SystemHealthMetric {
+  dbLatencyMs: number;
+  memoryUsageMb: number;
+  supabaseStatus: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
+  lastBackupAt: string;
+  activeConnections: number;
 }

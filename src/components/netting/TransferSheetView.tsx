@@ -1,4 +1,4 @@
-// Transfer Netting Sheet Component (White & Emerald Green Theme with Granular Per-Fund Review & Download)
+// Transfer Netting Sheet Component (Enterprise Commercial White & Emerald Green Theme)
 
 'use client';
 
@@ -8,8 +8,10 @@ import {
   CheckCircle2,
   ShieldCheck,
   ArrowRightLeft,
-  FileSpreadsheet,
+  FileCheck,
   Check,
+  AlertTriangle,
+  Lock,
 } from 'lucide-react';
 import { NettingRow, UserRole } from '@/lib/types';
 import { exportNettingSheet, exportSingleFundTransactionSheet } from '@/lib/excel-engine';
@@ -43,6 +45,11 @@ export function TransferSheetView({
   onReviewSingleFund,
 }: TransferSheetViewProps) {
   const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'EGP' | 'USD'>('ALL');
+  const [declarationModal, setDeclarationModal] = useState<{
+    actionType: 'SUBMIT_ALL' | 'APPROVE_ALL' | 'SUBMIT_SINGLE' | 'APPROVE_SINGLE';
+    symbolCode?: string;
+  } | null>(null);
+  const [declarationChecked, setDeclarationChecked] = useState(false);
 
   const filteredRows = nettingRows.filter((r) => {
     if (currencyFilter === 'ALL') return true;
@@ -58,6 +65,23 @@ export function TransferSheetView({
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleConfirmDeclaration = () => {
+    if (!declarationModal || !declarationChecked) return;
+
+    if (declarationModal.actionType === 'SUBMIT_ALL') {
+      onMakerSubmit();
+    } else if (declarationModal.actionType === 'APPROVE_ALL') {
+      onCheckerApprove();
+    } else if (declarationModal.actionType === 'SUBMIT_SINGLE' && declarationModal.symbolCode && onReviewSingleFund) {
+      onReviewSingleFund(declarationModal.symbolCode, 'UNDER_REVIEW');
+    } else if (declarationModal.actionType === 'APPROVE_SINGLE' && declarationModal.symbolCode && onReviewSingleFund) {
+      onReviewSingleFund(declarationModal.symbolCode, 'APPROVED');
+    }
+
+    setDeclarationModal(null);
+    setDeclarationChecked(false);
   };
 
   return (
@@ -185,7 +209,7 @@ export function TransferSheetView({
         <div className="flex items-center gap-3">
           {reviewStatus === 'DRAFT' || reviewStatus === 'GENERATED' ? (
             <button
-              onClick={onMakerSubmit}
+              onClick={() => setDeclarationModal({ actionType: 'SUBMIT_ALL' })}
               className="bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-amber-600/20"
             >
               <CheckCircle2 className="w-4 h-4" />
@@ -193,7 +217,7 @@ export function TransferSheetView({
             </button>
           ) : reviewStatus === 'UNDER_REVIEW' ? (
             <button
-              onClick={onCheckerApprove}
+              onClick={() => setDeclarationModal({ actionType: 'APPROVE_ALL' })}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
             >
               <ShieldCheck className="w-4 h-4" />
@@ -268,10 +292,11 @@ export function TransferSheetView({
                     </span>
                   </td>
                   <td className="p-3 text-center flex items-center justify-center gap-1.5">
-                    {/* Per-Fund Granular Actions */}
                     {row.reviewStatus === 'DRAFT' && onReviewSingleFund && (
                       <button
-                        onClick={() => onReviewSingleFund(row.symbolCode, 'UNDER_REVIEW')}
+                        onClick={() =>
+                          setDeclarationModal({ actionType: 'SUBMIT_SINGLE', symbolCode: row.symbolCode })
+                        }
                         title="Submit this specific fund for review"
                         className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1"
                       >
@@ -282,7 +307,9 @@ export function TransferSheetView({
 
                     {row.reviewStatus === 'UNDER_REVIEW' && onReviewSingleFund && (
                       <button
-                        onClick={() => onReviewSingleFund(row.symbolCode, 'APPROVED')}
+                        onClick={() =>
+                          setDeclarationModal({ actionType: 'APPROVE_SINGLE', symbolCode: row.symbolCode })
+                        }
                         title="Approve & Lock this specific fund"
                         className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 shadow-sm"
                       >
@@ -293,7 +320,7 @@ export function TransferSheetView({
 
                     {row.reviewStatus === 'APPROVED' && (
                       <span className="text-emerald-700 font-bold text-[10px] flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Approved
+                        <Check className="w-3 h-3 text-emerald-600" /> Approved
                       </span>
                     )}
                   </td>
@@ -324,6 +351,63 @@ export function TransferSheetView({
           </tfoot>
         </table>
       </div>
+
+      {/* Enterprise Digital Compliance Declaration Modal */}
+      {declarationModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-emerald-200 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-emerald-700 border-b border-slate-100 pb-3">
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                <FileCheck className="w-6 h-6 text-emerald-600" />
+              </div>
+              <div>
+                <h4 className="font-bold text-base text-slate-900">
+                  Four-Eyes Digital Audit Declaration
+                </h4>
+                <p className="text-xs text-slate-600">Enterprise Compliance Sign-off</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 leading-relaxed font-sans space-y-2">
+              <p className="font-bold text-slate-900">Digital Confirmation Statement:</p>
+              <p className="italic">
+                "I hereby confirm under penalty of audit compliance that I have independently verified all trade execution records, order values, and net settlement calculations against authoritative source files without discrepancy."
+              </p>
+            </div>
+
+            <label className="flex items-start gap-2.5 p-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={declarationChecked}
+                onChange={(e) => setDeclarationChecked(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+              />
+              <span className="text-xs text-slate-800 font-medium">
+                I solemnly agree and execute this digital signature with immutable audit logging.
+              </span>
+            </label>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => {
+                  setDeclarationModal(null);
+                  setDeclarationChecked(false);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!declarationChecked}
+                onClick={handleConfirmDeclaration}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 shadow-md shadow-emerald-600/20"
+              >
+                Confirm &amp; Log Audit Sign-off
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
