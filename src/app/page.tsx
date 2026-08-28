@@ -1,9 +1,10 @@
-// Main Application Workspace - Enterprise Investment Management Platform
+// Main Workspace Component (White & Emerald Green Theme with Real Auth & Supabase DB)
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
+import { LoginForm } from '@/components/auth/LoginForm';
 import { OverviewCards } from '@/components/dashboard/OverviewCards';
 import { FileUploader } from '@/components/ingestion/FileUploader';
 import { TransactionReportTable } from '@/components/reports/TransactionReportTable';
@@ -24,19 +25,28 @@ import {
   UserRole,
 } from '@/lib/types';
 import {
-  INITIAL_AUDIT_LOGS,
-  INITIAL_CHECKLISTS,
-  INITIAL_REFERENCE_DATA,
-} from '@/lib/store';
+  fetchReferenceDataFromDb,
+  insertReferenceDataToDb,
+  saveAuditLogToDb,
+  saveUploadedFileToDb,
+  updateNavPriceInDb,
+} from '@/lib/db-service';
+import { INITIAL_AUDIT_LOGS, INITIAL_CHECKLISTS } from '@/lib/store';
 import { applyFundRules } from '@/lib/rule-engine';
 import { calculateNettingSheet } from '@/lib/netting-engine';
 
 export default function InvestmentPlatformPage() {
-  const [currentRole, setCurrentRole] = useState<UserRole>('OPERATIONS_USER');
+  // Real User Session State (Supabase Auth / Session Manager)
+  const [currentUser, setCurrentUser] = useState<{
+    email: string;
+    fullName: string;
+    role: UserRole;
+  } | null>(null);
+
   const [activeTab, setActiveTab] = useState<string>('dashboard');
 
-  // State Stores
-  const [referenceDataList, setReferenceDataList] = useState<ReferenceData[]>(INITIAL_REFERENCE_DATA);
+  // Dynamic Stores initialized from Supabase DB
+  const [referenceDataList, setReferenceDataList] = useState<ReferenceData[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileRecord[]>([]);
   const [rawTransactions, setRawTransactions] = useState<RawTransactionRow[]>([]);
   const [checklists, setChecklists] = useState<ChecklistItem[]>(INITIAL_CHECKLISTS);
@@ -48,12 +58,24 @@ export default function InvestmentPlatformPage() {
   const [makerName, setMakerName] = useState<string>('');
   const [checkerName, setCheckerName] = useState<string>('');
 
+  // Load Dynamic Reference Data from Supabase PostgreSQL on Mount
+  useEffect(() => {
+    async function loadDbData() {
+      const dbRefData = await fetchReferenceDataFromDb();
+      setReferenceDataList(dbRefData);
+    }
+    loadDbData();
+  }, []);
+
   // Handle File Upload Event
-  const handleFileUpload = (fileRecord: UploadedFileRecord, parsedRows: RawTransactionRow[]) => {
+  const handleFileUpload = async (fileRecord: UploadedFileRecord, parsedRows: RawTransactionRow[]) => {
     setUploadedFiles((prev) => [fileRecord, ...prev]);
     setRawTransactions((prev) => [...parsedRows, ...prev]);
 
-    // Flexible reference data matching (matches Symbol Code, Actual Symbol, or Symbol Name)
+    // Save to Supabase PostgreSQL Database
+    await saveUploadedFileToDb(fileRecord, parsedRows);
+
+    // Flexible Reference Data matching
     const newExceptions: ExceptionRecord[] = [];
     parsedRows.forEach((row) => {
       const symClean = row.symbol.trim().toLowerCase();
@@ -86,22 +108,22 @@ export default function InvestmentPlatformPage() {
       setExceptions((prev) => [...newExceptions, ...prev]);
     }
 
-    // Auto-update Checklist Item #1
+    // Update Checklist Item #1
     setChecklists((prev) =>
       prev.map((c) =>
         c.id === 'chk-1'
           ? {
               ...c,
               isCompleted: true,
-              completedBy: 'user-ops-1',
-              completedByName: 'Ahmed Hassan (Maker)',
+              completedBy: currentUser?.email || 'user-ops-1',
+              completedByName: currentUser?.fullName || 'Ahmed Hassan (Maker)',
               completedAt: new Date().toISOString(),
             }
           : c
       )
     );
 
-    // Audit Log
+    // Audit Log to DB
     addAuditLog('FILE_INGESTION', 'UPLOADED_FILE', fileRecord.id, {
       fileName: fileRecord.fileName,
       rowCount: parsedRows.length,
@@ -109,12 +131,11 @@ export default function InvestmentPlatformPage() {
     });
   };
 
-  // Helper to push Audit Logs
-  const addAuditLog = (action: string, entityName: string, entityId?: string, newValues?: Record<string, unknown>) => {
+  const addAuditLog = async (action: string, entityName: string, entityId?: string, newValues?: Record<string, unknown>) => {
     const newLog: AuditLog = {
       id: `log-${Date.now()}`,
-      userId: currentRole === 'SUPER_ADMIN' ? 'user-admin-1' : 'user-ops-1',
-      userName: currentRole === 'SUPER_ADMIN' ? 'Super Administrator' : 'Ahmed Hassan (Maker)',
+      userId: currentUser?.email || 'user-system',
+      userName: currentUser?.fullName || 'System User',
       action,
       entityName,
       entityId,
@@ -123,6 +144,7 @@ export default function InvestmentPlatformPage() {
       newValues,
     };
     setAuditLogs((prev) => [newLog, ...prev]);
+    await saveAuditLogToDb(newLog);
   };
 
   // Evaluate Dynamic Rules to generate output transaction rows
@@ -140,24 +162,20 @@ export default function InvestmentPlatformPage() {
     return applyFundRules(tx, fundType);
   });
 
-  // Calculate Netting Summary
   const nettingSummary = calculateNettingSheet(rawTransactions, referenceDataList);
 
-  // Maker Submit for Review
   const handleMakerSubmit = () => {
     setReviewStatus('UNDER_REVIEW');
-    setMakerName('Ahmed Hassan (Maker)');
+    setMakerName(currentUser?.fullName || 'Ahmed Hassan (Maker)');
     addAuditLog('SUBMIT_REVIEW', 'TRANSFER_SHEET', 'sheet-1', { status: 'UNDER_REVIEW' });
   };
 
-  // Checker Approve Review (Enforces 4-Eyes Principle)
   const handleCheckerApprove = () => {
     setReviewStatus('APPROVED');
-    setCheckerName(currentRole === 'SUPER_ADMIN' ? 'Super Administrator' : 'Mariam Ali (Checker)');
+    setCheckerName(currentUser?.fullName || 'Checker Supervisor');
     addAuditLog('APPROVE_TRANSFER', 'TRANSFER_SHEET', 'sheet-1', { status: 'APPROVED' });
   };
 
-  // Checklist Completion
   const handleToggleChecklist = (itemId: string) => {
     setChecklists((prev) =>
       prev.map((c) =>
@@ -165,8 +183,8 @@ export default function InvestmentPlatformPage() {
           ? {
               ...c,
               isCompleted: true,
-              completedBy: 'user-ops-1',
-              completedByName: currentRole === 'SUPER_ADMIN' ? 'Super Administrator' : 'Ahmed Hassan (Maker)',
+              completedBy: currentUser?.email || 'user-ops-1',
+              completedByName: currentUser?.fullName || 'Ops User',
               completedAt: new Date().toISOString(),
             }
           : c
@@ -175,7 +193,6 @@ export default function InvestmentPlatformPage() {
     addAuditLog('CHECKLIST_COMPLETE', 'CHECKLIST_ITEM', itemId);
   };
 
-  // Super Admin Reopen Checklist
   const handleReopenChecklist = (itemId: string, reason: string) => {
     setChecklists((prev) =>
       prev.map((c) =>
@@ -183,8 +200,8 @@ export default function InvestmentPlatformPage() {
           ? {
               ...c,
               isCompleted: false,
-              reopenedBy: 'user-admin-1',
-              reopenedByName: 'Super Administrator',
+              reopenedBy: currentUser?.email || 'user-admin-1',
+              reopenedByName: currentUser?.fullName || 'Super Administrator',
               reopenedAt: new Date().toISOString(),
               reopenReason: reason,
             }
@@ -194,7 +211,6 @@ export default function InvestmentPlatformPage() {
     addAuditLog('REOPEN_CHECKLIST', 'CHECKLIST_ITEM', itemId, { reason });
   };
 
-  // Resolve Exception
   const handleResolveException = (id: string) => {
     setExceptions((prev) =>
       prev.map((ex) => (ex.id === id ? { ...ex, status: 'RESOLVED', resolvedAt: new Date().toISOString() } : ex))
@@ -202,31 +218,35 @@ export default function InvestmentPlatformPage() {
     addAuditLog('RESOLVE_EXCEPTION', 'EXCEPTION_RECORD', id);
   };
 
-  // Add Reference Data
-  const handleAddReferenceData = (item: Omit<ReferenceData, 'id'>) => {
-    const newItem: ReferenceData = { ...item, id: `ref-${Date.now()}` };
-    setReferenceDataList((prev) => [newItem, ...prev]);
-    addAuditLog('CREATE_REFERENCE_DATA', 'REFERENCE_DATA', newItem.id, { symbolCode: newItem.symbolCode });
+  const handleAddReferenceData = async (item: Omit<ReferenceData, 'id'>) => {
+    const createdItem = await insertReferenceDataToDb(item);
+    setReferenceDataList((prev) => [createdItem, ...prev]);
+    addAuditLog('CREATE_REFERENCE_DATA', 'REFERENCE_DATA', createdItem.id, { symbolCode: createdItem.symbolCode });
   };
 
-  // Update NAV Price
-  const handleUpdateNavPrice = (id: string, newPrice: number) => {
+  const handleUpdateNavPrice = async (id: string, newPrice: number) => {
     setReferenceDataList((prev) =>
       prev.map((r) => (r.id === id ? { ...r, navUnitPrice: newPrice } : r))
     );
+    await updateNavPriceInDb(id, newPrice);
     addAuditLog('UPDATE_NAV_PRICE', 'REFERENCE_DATA', id, { newPrice });
   };
+
+  // If user is not logged in, render Login Form (White & Emerald Green Theme)
+  if (!currentUser) {
+    return <LoginForm onLoginSuccess={setCurrentUser} />;
+  }
 
   const pendingReviewsCount = reviewStatus === 'UNDER_REVIEW' ? 1 : 0;
   const openExceptionsCount = exceptions.filter((e) => e.status === 'OPEN').length;
   const existingHashes = uploadedFiles.map((f) => f.fileHashSha256);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
-      {/* Navigation Header */}
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased">
+      {/* Navigation Header with Real User Profile & Logout */}
       <Navbar
-        currentRole={currentRole}
-        onRoleChange={setCurrentRole}
+        currentUser={currentUser}
+        onLogout={() => setCurrentUser(null)}
         activeTab={activeTab}
         onTabChange={setActiveTab}
         pendingReviewsCount={pendingReviewsCount}
@@ -269,7 +289,7 @@ export default function InvestmentPlatformPage() {
             totalBuy={nettingSummary.totalBuy}
             totalSell={nettingSummary.totalSell}
             totalNet={nettingSummary.totalNet}
-            currentRole={currentRole}
+            currentRole={currentUser.role}
             reviewStatus={reviewStatus}
             makerName={makerName}
             checkerName={checkerName}
@@ -281,7 +301,7 @@ export default function InvestmentPlatformPage() {
         {activeTab === 'checklists' && (
           <ChecklistEngine
             items={checklists}
-            currentRole={currentRole}
+            currentRole={currentUser.role}
             onToggleComplete={handleToggleChecklist}
             onReopenItem={handleReopenChecklist}
           />
@@ -293,7 +313,7 @@ export default function InvestmentPlatformPage() {
 
         {activeTab === 'audit' && <AuditTrailViewer logs={auditLogs} />}
 
-        {activeTab === 'admin' && currentRole === 'SUPER_ADMIN' && (
+        {activeTab === 'admin' && currentUser.role === 'SUPER_ADMIN' && (
           <ReferenceDataAdmin
             referenceDataList={referenceDataList}
             onAddReferenceData={handleAddReferenceData}

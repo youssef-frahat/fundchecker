@@ -1,9 +1,9 @@
-// Audit Trail Viewer Component - Immutable Log Inspection
+// Audit Trail Viewer Component (White & Emerald Green Theme)
 
 'use client';
 
 import React, { useState } from 'react';
-import { Lock, Search, ShieldCheck, Clock, FileText } from 'lucide-react';
+import { Lock, Search } from 'lucide-react';
 import { AuditLog } from '@/lib/types';
 
 interface AuditTrailViewerProps {
@@ -21,17 +21,17 @@ export function AuditTrailViewer({ logs }: AuditTrailViewerProps) {
   );
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <Lock className="w-5 h-5 text-emerald-400" />
-            <h3 className="font-bold text-lg text-slate-100">
+            <Lock className="w-5 h-5 text-emerald-600" />
+            <h3 className="font-bold text-lg text-slate-900">
               Immutable System Audit Trail
             </h3>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-600 mt-1">
             Database trigger enforced. Every file ingestion, review approval, reopen action, and setting change is logged permanently.
           </p>
         </div>
@@ -43,15 +43,15 @@ export function AuditTrailViewer({ logs }: AuditTrailViewerProps) {
             placeholder="Search audit logs..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-slate-950 border border-slate-800 pl-9 pr-3 py-1.5 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 w-64"
+            className="bg-slate-50 border border-slate-300 pl-9 pr-3 py-1.5 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-emerald-600 w-64"
           />
         </div>
       </div>
 
       {/* Audit Log Table */}
-      <div className="overflow-x-auto rounded-xl border border-slate-800">
-        <table className="w-full text-left text-xs font-mono text-slate-300">
-          <thead className="bg-slate-950 text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-slate-800">
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full text-left text-xs font-mono text-slate-800">
+          <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
             <tr>
               <th className="p-3">Log ID</th>
               <th className="p-3">User</th>
@@ -61,7 +61,7 @@ export function AuditTrailViewer({ logs }: AuditTrailViewerProps) {
               <th className="p-3">Timestamp (Cairo / UTC)</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60">
+          <tbody className="divide-y divide-slate-100">
             {filteredLogs.length === 0 ? (
               <tr>
                 <td colSpan={6} className="p-8 text-center text-slate-500 font-sans">
@@ -70,17 +70,17 @@ export function AuditTrailViewer({ logs }: AuditTrailViewerProps) {
               </tr>
             ) : (
               filteredLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-slate-800/40 transition">
-                  <td className="p-3 font-semibold text-emerald-400">{log.id}</td>
-                  <td className="p-3 font-sans text-slate-200">{log.userName}</td>
+                <tr key={log.id} className="hover:bg-slate-50 transition">
+                  <td className="p-3 font-semibold text-emerald-700">{log.id}</td>
+                  <td className="p-3 font-sans text-slate-900">{log.userName}</td>
                   <td className="p-3">
-                    <span className="bg-slate-800 text-slate-200 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-bold">
+                    <span className="bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold">
                       {log.action}
                     </span>
                   </td>
-                  <td className="p-3 text-slate-400">{log.entityName}</td>
-                  <td className="p-3 text-slate-400">{log.ipAddress}</td>
-                  <td className="p-3 text-slate-300">
+                  <td className="p-3 text-slate-600">{log.entityName}</td>
+                  <td className="p-3 text-slate-600">{log.ipAddress}</td>
+                  <td className="p-3 text-slate-700">
                     {new Date(log.timestampUtc).toLocaleString('en-GB', { timeZone: 'Africa/Cairo' })} (Cairo)
                   </td>
                 </tr>

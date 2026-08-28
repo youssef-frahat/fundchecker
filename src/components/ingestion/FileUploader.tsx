@@ -1,4 +1,4 @@
-// Ingestion Module - File Uploader, SHA-256 Duplicate Modal & Demo File Generator
+// Ingestion Module - File Uploader (White & Emerald Green Theme)
 
 'use client';
 
@@ -7,11 +7,9 @@ import {
   UploadCloud,
   FileSpreadsheet,
   AlertTriangle,
-  CheckCircle2,
   Lock,
   RefreshCw,
   Sparkles,
-  Layers,
   FileCheck,
 } from 'lucide-react';
 import { computeFileHash, parseTradingExcel } from '@/lib/excel-engine';
@@ -37,15 +35,12 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
     setIsProcessing(true);
 
     try {
-      // Validate size (max 100MB)
       if (file.size > 100 * 1024 * 1024) {
         throw new Error('File exceeds maximum upload threshold of 100MB.');
       }
 
-      // Compute SHA-256 hash
       const hash = await computeFileHash(file);
 
-      // Duplicate Hash Check
       if (existingHashes.includes(hash)) {
         setDuplicateModal({ file, hash });
         setIsProcessing(false);
@@ -104,12 +99,10 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
     }
   };
 
-  // Generate Sample Trading File for instant UAT testing!
   const generateSampleExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('Sheet1');
 
-    // Headers matching the 39 source columns
     ws.addRow([
       'Request Id',
       'Mubasher No',
@@ -138,7 +131,6 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
       'Order Date',
     ]);
 
-    // Sample Egyptian Fund Trading Rows matching user screenshot datasets
     const sampleData = [
       ['IPO260825-1-00231', '226752177', 'SHIEHAM SAAD AHMED KOTB', 'BUY', '1005', 'NI Capital Money Market', 'EXECUTED', 'MUBASHER', 'EGP', 35377, 24.02706, 850005.3016, 0, 850005.3016, 'ACC-101', 5000000, 10000000, 'EGS693R1C012', 0, 0, 'EX-1', 'UNI-1', '', 'SYS', '2026-08-25T10:00:00Z'],
       ['IPO260825-1-00278', '465928456', 'KARIM KHALED MOAHMED ELIWA', 'BUY', '1016', 'Cash Mubasher Fund', 'EXECUTED', 'MUBASHER', 'EGP', 300, 24.02706, 7208.118, 0, 7208.118, 'ACC-102', 2000000, 4000000, 'EGS693R1C013', 0, 0, 'EX-1', 'UNI-2', '', 'SYS', '2026-08-25T10:05:00Z'],
@@ -172,31 +164,31 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
         onDrop={handleDrop}
         className={`border-2 border-dashed rounded-3xl p-8 text-center transition-all ${
           isDragging
-            ? 'border-emerald-500 bg-emerald-950/20 scale-[1.01]'
-            : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+            ? 'border-emerald-600 bg-emerald-50 scale-[1.01]'
+            : 'border-slate-300 bg-white hover:border-emerald-500 shadow-sm'
         }`}
       >
         <div className="max-w-md mx-auto space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400 shadow-xl shadow-emerald-500/10">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto text-emerald-700 shadow-md shadow-emerald-500/10">
             {isProcessing ? (
-              <RefreshCw className="w-8 h-8 animate-spin" />
+              <RefreshCw className="w-8 h-8 animate-spin text-emerald-600" />
             ) : (
-              <UploadCloud className="w-8 h-8" />
+              <UploadCloud className="w-8 h-8 text-emerald-600" />
             )}
           </div>
 
           <div>
-            <h3 className="text-lg font-bold text-slate-100">
+            <h3 className="text-lg font-bold text-slate-900">
               Upload Daily Excel Trading File
             </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Supports 39-column raw trading format up to <span className="text-emerald-400 font-semibold">100MB (50,000+ rows)</span>
+            <p className="text-xs text-slate-600 mt-1">
+              Supports 39-column raw trading format up to <span className="text-emerald-700 font-semibold">100MB (50,000+ rows)</span>
             </p>
           </div>
 
           {/* Action Buttons */}
           <div className="flex items-center justify-center gap-3 pt-2">
-            <label className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-5 py-2.5 rounded-xl cursor-pointer text-xs transition flex items-center gap-2 shadow-lg shadow-emerald-600/20">
+            <label className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-2.5 rounded-xl cursor-pointer text-xs transition flex items-center gap-2 shadow-md shadow-emerald-600/20">
               <FileSpreadsheet className="w-4 h-4" />
               Browse Excel File
               <input
@@ -211,20 +203,20 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
             <button
               onClick={generateSampleExcel}
               disabled={isProcessing}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-4 py-2.5 rounded-xl text-xs transition flex items-center gap-2 border border-slate-700"
+              className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold px-4 py-2.5 rounded-xl text-xs transition flex items-center gap-2 border border-slate-300"
             >
-              <Sparkles className="w-4 h-4 text-emerald-400" />
+              <Sparkles className="w-4 h-4 text-emerald-600" />
               Load Sample Trade File
             </button>
           </div>
 
           {/* Feature Micro-Badges */}
-          <div className="flex items-center justify-center gap-4 text-[11px] text-slate-400 pt-3 border-t border-slate-800/80">
+          <div className="flex items-center justify-center gap-4 text-[11px] text-slate-600 pt-3 border-t border-slate-100">
             <span className="flex items-center gap-1">
-              <Lock className="w-3 h-3 text-emerald-400" /> SHA-256 Hash Duplicate Check
+              <Lock className="w-3 h-3 text-emerald-600" /> SHA-256 Hash Duplicate Check
             </span>
             <span className="flex items-center gap-1">
-              <FileCheck className="w-3 h-3 text-emerald-400" /> 39-Column Auto Validation
+              <FileCheck className="w-3 h-3 text-emerald-600" /> 39-Column Auto Validation
             </span>
           </div>
         </div>
@@ -232,48 +224,48 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
 
       {/* Error Banner */}
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
           <div>
             <p className="font-bold">Ingestion Error</p>
-            <p className="text-rose-400/90">{errorMessage}</p>
+            <p className="text-rose-700">{errorMessage}</p>
           </div>
         </div>
       )}
 
       {/* Duplicate Hash Detection Modal */}
       {duplicateModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-amber-400">
-              <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20">
-                <AlertTriangle className="w-6 h-6" />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-amber-200 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-amber-700">
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
               </div>
               <div>
-                <h4 className="font-bold text-base text-slate-100">Duplicate File Detected</h4>
-                <p className="text-xs text-amber-400/90">SHA-256 Hash Conflict Identified</p>
+                <h4 className="font-bold text-base text-slate-900">Duplicate File Detected</h4>
+                <p className="text-xs text-amber-700">SHA-256 Hash Conflict Identified</p>
               </div>
             </div>
 
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs space-y-1 font-mono text-slate-300">
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1 font-mono text-slate-800">
               <p><span className="text-slate-500">File Name:</span> {duplicateModal.file.name}</p>
               <p className="truncate"><span className="text-slate-500">SHA-256:</span> {duplicateModal.hash}</p>
             </div>
 
-            <p className="text-xs text-slate-300">
+            <p className="text-xs text-slate-600">
               An identical file hash has already been ingested into the audit database today. Re-processing will create new report versions.
             </p>
 
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 onClick={() => setDuplicateModal(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-slate-800"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
               >
                 Cancel
               </button>
               <button
                 onClick={() => executeFileParsing(duplicateModal.file, duplicateModal.hash)}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/20"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-md shadow-amber-600/20"
               >
                 Proceed &amp; Overwrite Version
               </button>
