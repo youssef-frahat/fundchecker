@@ -1,4 +1,4 @@
-// Main Workspace Component (White & Emerald Green Theme with Real Auth & Supabase DB)
+// Main Workspace Component (White & Emerald Green Theme with Granular Per-Fund Review & Sheet Exporter)
 
 'use client';
 
@@ -33,10 +33,9 @@ import {
 } from '@/lib/db-service';
 import { INITIAL_AUDIT_LOGS, INITIAL_CHECKLISTS } from '@/lib/store';
 import { applyFundRules } from '@/lib/rule-engine';
-import { calculateNettingSheet } from '@/lib/netting-engine';
+import { calculateNettingSheet, FundReviewState } from '@/lib/netting-engine';
 
 export default function InvestmentPlatformPage() {
-  // Real User Session State (Supabase Auth / Session Manager)
   const [currentUser, setCurrentUser] = useState<{
     email: string;
     fullName: string;
@@ -45,7 +44,6 @@ export default function InvestmentPlatformPage() {
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
 
-  // Dynamic Stores initialized from Supabase DB
   const [referenceDataList, setReferenceDataList] = useState<ReferenceData[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileRecord[]>([]);
   const [rawTransactions, setRawTransactions] = useState<RawTransactionRow[]>([]);
@@ -53,12 +51,12 @@ export default function InvestmentPlatformPage() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
   const [exceptions, setExceptions] = useState<ExceptionRecord[]>([]);
 
-  // Netting Review Workflow State
+  // Netting Review Workflow State (Global Batch & Per-Fund Granular)
   const [reviewStatus, setReviewStatus] = useState<'DRAFT' | 'GENERATED' | 'UNDER_REVIEW' | 'APPROVED'>('DRAFT');
   const [makerName, setMakerName] = useState<string>('');
   const [checkerName, setCheckerName] = useState<string>('');
+  const [perFundReviewStates, setPerFundReviewStates] = useState<Record<string, FundReviewState>>({});
 
-  // Load Dynamic Reference Data from Supabase PostgreSQL on Mount
   useEffect(() => {
     async function loadDbData() {
       const dbRefData = await fetchReferenceDataFromDb();
@@ -67,15 +65,12 @@ export default function InvestmentPlatformPage() {
     loadDbData();
   }, []);
 
-  // Handle File Upload Event
   const handleFileUpload = async (fileRecord: UploadedFileRecord, parsedRows: RawTransactionRow[]) => {
     setUploadedFiles((prev) => [fileRecord, ...prev]);
     setRawTransactions((prev) => [...parsedRows, ...prev]);
 
-    // Save to Supabase PostgreSQL Database
     await saveUploadedFileToDb(fileRecord, parsedRows);
 
-    // Flexible Reference Data matching
     const newExceptions: ExceptionRecord[] = [];
     parsedRows.forEach((row) => {
       const symClean = row.symbol.trim().toLowerCase();
@@ -108,7 +103,6 @@ export default function InvestmentPlatformPage() {
       setExceptions((prev) => [...newExceptions, ...prev]);
     }
 
-    // Update Checklist Item #1
     setChecklists((prev) =>
       prev.map((c) =>
         c.id === 'chk-1'
@@ -123,7 +117,6 @@ export default function InvestmentPlatformPage() {
       )
     );
 
-    // Audit Log to DB
     addAuditLog('FILE_INGESTION', 'UPLOADED_FILE', fileRecord.id, {
       fileName: fileRecord.fileName,
       rowCount: parsedRows.length,
@@ -147,7 +140,6 @@ export default function InvestmentPlatformPage() {
     await saveAuditLogToDb(newLog);
   };
 
-  // Evaluate Dynamic Rules to generate output transaction rows
   const generatedRows: GeneratedTransactionRow[] = rawTransactions.map((tx) => {
     const symClean = tx.symbol.trim().toLowerCase();
     const descClean = tx.symbolDescription.trim().toLowerCase();
@@ -162,18 +154,62 @@ export default function InvestmentPlatformPage() {
     return applyFundRules(tx, fundType);
   });
 
-  const nettingSummary = calculateNettingSheet(rawTransactions, referenceDataList);
+  const nettingSummary = calculateNettingSheet(rawTransactions, referenceDataList, 'symbol', perFundReviewStates);
 
+  // Global Batch Maker Submit
   const handleMakerSubmit = () => {
     setReviewStatus('UNDER_REVIEW');
     setMakerName(currentUser?.fullName || 'Ahmed Hassan (Maker)');
-    addAuditLog('SUBMIT_REVIEW', 'TRANSFER_SHEET', 'sheet-1', { status: 'UNDER_REVIEW' });
+
+    // Update all funds to UNDER_REVIEW
+    const updatedStates: Record<string, FundReviewState> = {};
+    nettingSummary.rows.forEach((r) => {
+      updatedStates[r.symbolCode] = {
+        reviewStatus: 'UNDER_REVIEW',
+        makerName: currentUser?.fullName || 'Maker',
+      };
+    });
+    setPerFundReviewStates(updatedStates);
+    addAuditLog('SUBMIT_REVIEW', 'TRANSFER_SHEET', 'sheet-all', { status: 'UNDER_REVIEW' });
   };
 
+  // Global Batch Checker Approve
   const handleCheckerApprove = () => {
     setReviewStatus('APPROVED');
     setCheckerName(currentUser?.fullName || 'Checker Supervisor');
-    addAuditLog('APPROVE_TRANSFER', 'TRANSFER_SHEET', 'sheet-1', { status: 'APPROVED' });
+
+    // Update all funds to APPROVED
+    const updatedStates: Record<string, FundReviewState> = {};
+    nettingSummary.rows.forEach((r) => {
+      updatedStates[r.symbolCode] = {
+        reviewStatus: 'APPROVED',
+        makerName: makerName || 'Maker',
+        checkerName: currentUser?.fullName || 'Checker Supervisor',
+        approvedAt: new Date().toISOString(),
+      };
+    });
+    setPerFundReviewStates(updatedStates);
+    addAuditLog('APPROVE_TRANSFER', 'TRANSFER_SHEET', 'sheet-all', { status: 'APPROVED' });
+  };
+
+  // Granular Per-Fund Review Handler
+  const handleReviewSingleFund = (symbolCode: string, newStatus: 'UNDER_REVIEW' | 'APPROVED') => {
+    setPerFundReviewStates((prev) => ({
+      ...prev,
+      [symbolCode]: {
+        reviewStatus: newStatus,
+        makerName: newStatus === 'UNDER_REVIEW' ? currentUser?.fullName : prev[symbolCode]?.makerName,
+        checkerName: newStatus === 'APPROVED' ? currentUser?.fullName : prev[symbolCode]?.checkerName,
+        approvedAt: newStatus === 'APPROVED' ? new Date().toISOString() : undefined,
+      },
+    }));
+
+    addAuditLog(
+      newStatus === 'UNDER_REVIEW' ? 'SUBMIT_SINGLE_FUND' : 'APPROVE_SINGLE_FUND',
+      'FUND_SHEET',
+      symbolCode,
+      { symbolCode, newStatus }
+    );
   };
 
   const handleToggleChecklist = (itemId: string) => {
@@ -232,7 +268,6 @@ export default function InvestmentPlatformPage() {
     addAuditLog('UPDATE_NAV_PRICE', 'REFERENCE_DATA', id, { newPrice });
   };
 
-  // If user is not logged in, render Login Form (White & Emerald Green Theme)
   if (!currentUser) {
     return <LoginForm onLoginSuccess={setCurrentUser} />;
   }
@@ -243,7 +278,6 @@ export default function InvestmentPlatformPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased">
-      {/* Navigation Header with Real User Profile & Logout */}
       <Navbar
         currentUser={currentUser}
         onLogout={() => setCurrentUser(null)}
@@ -253,9 +287,7 @@ export default function InvestmentPlatformPage() {
         exceptionsCount={openExceptionsCount}
       />
 
-      {/* Main Workspace Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* View Router */}
         {activeTab === 'dashboard' && (
           <div className="space-y-8">
             <OverviewCards
@@ -295,6 +327,7 @@ export default function InvestmentPlatformPage() {
             checkerName={checkerName}
             onMakerSubmit={handleMakerSubmit}
             onCheckerApprove={handleCheckerApprove}
+            onReviewSingleFund={handleReviewSingleFund}
           />
         )}
 

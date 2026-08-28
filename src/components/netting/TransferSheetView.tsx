@@ -1,4 +1,4 @@
-// Transfer Netting Sheet Component (White & Emerald Green Theme)
+// Transfer Netting Sheet Component (White & Emerald Green Theme with Granular Per-Fund Review & Download)
 
 'use client';
 
@@ -8,9 +8,11 @@ import {
   CheckCircle2,
   ShieldCheck,
   ArrowRightLeft,
+  FileSpreadsheet,
+  Check,
 } from 'lucide-react';
 import { NettingRow, UserRole } from '@/lib/types';
-import { exportNettingSheet } from '@/lib/excel-engine';
+import { exportNettingSheet, exportSingleFundTransactionSheet } from '@/lib/excel-engine';
 import { formatFinancialNumber } from '@/lib/netting-engine';
 
 interface TransferSheetViewProps {
@@ -24,6 +26,7 @@ interface TransferSheetViewProps {
   checkerName?: string;
   onMakerSubmit: () => void;
   onCheckerApprove: () => void;
+  onReviewSingleFund?: (symbolCode: string, newStatus: 'UNDER_REVIEW' | 'APPROVED') => void;
 }
 
 export function TransferSheetView({
@@ -37,6 +40,7 @@ export function TransferSheetView({
   checkerName,
   onMakerSubmit,
   onCheckerApprove,
+  onReviewSingleFund,
 }: TransferSheetViewProps) {
   const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'EGP' | 'USD'>('ALL');
 
@@ -68,7 +72,7 @@ export function TransferSheetView({
             </h3>
           </div>
           <p className="text-xs text-slate-600 mt-1">
-            Calculated as <span className="text-emerald-700 font-mono font-bold">NET = Sell - Buy</span> across registered fund symbols.
+            Calculated as <span className="text-emerald-700 font-mono font-bold">NET = Sell - Buy</span> across registered fund symbols. Review or download individually per fund.
           </p>
         </div>
 
@@ -106,7 +110,7 @@ export function TransferSheetView({
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-2 shadow-md shadow-emerald-600/20"
           >
             <Download className="w-4 h-4" />
-            Download Netting Sheet
+            Download Full Netting Sheet
           </button>
         </div>
       </div>
@@ -141,7 +145,7 @@ export function TransferSheetView({
         </div>
       </div>
 
-      {/* Maker-Checker Workflow Bar */}
+      {/* Global Batch Approval Bar */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div
@@ -157,7 +161,7 @@ export function TransferSheetView({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900">Maker-Checker Approval Status:</span>
+              <span className="text-xs font-bold text-slate-900">Batch Netting Review Status:</span>
               <span
                 className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
                   reviewStatus === 'APPROVED'
@@ -177,7 +181,7 @@ export function TransferSheetView({
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Global Batch Action Buttons */}
         <div className="flex items-center gap-3">
           {reviewStatus === 'DRAFT' || reviewStatus === 'GENERATED' ? (
             <button
@@ -185,7 +189,7 @@ export function TransferSheetView({
               className="bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-amber-600/20"
             >
               <CheckCircle2 className="w-4 h-4" />
-              Submit Netting Sheet for Review
+              Submit All Funds for Review
             </button>
           ) : reviewStatus === 'UNDER_REVIEW' ? (
             <button
@@ -193,18 +197,18 @@ export function TransferSheetView({
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
             >
               <ShieldCheck className="w-4 h-4" />
-              Checker Approve &amp; Lock Transfer
+              Checker Approve &amp; Lock All
             </button>
           ) : (
             <div className="flex items-center gap-1 text-emerald-800 text-xs font-bold bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              Transfer Sheet Approved &amp; Locked
+              Batch Approved &amp; Locked
             </div>
           )}
         </div>
       </div>
 
-      {/* Netting Table matching Screenshot 1 */}
+      {/* Netting Table with Granular Per-Fund Review & Download Actions */}
       <div className="overflow-x-auto rounded-xl border border-slate-200">
         <table className="w-full text-left text-xs font-mono text-slate-800">
           <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
@@ -215,6 +219,8 @@ export function TransferSheetView({
               <th className="p-3 text-right">Buy (EGP/USD)</th>
               <th className="p-3 text-right">Sell (EGP/USD)</th>
               <th className="p-3 text-right">NET (Sell - Buy)</th>
+              <th className="p-3 text-center">Fund Status</th>
+              <th className="p-3 text-center">Per-Fund Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -248,6 +254,49 @@ export function TransferSheetView({
                       {formattedNet}
                     </span>
                   </td>
+                  <td className="p-3 text-center">
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        row.reviewStatus === 'APPROVED'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : row.reviewStatus === 'UNDER_REVIEW'
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {row.reviewStatus}
+                    </span>
+                  </td>
+                  <td className="p-3 text-center flex items-center justify-center gap-1.5">
+                    {/* Per-Fund Granular Actions */}
+                    {row.reviewStatus === 'DRAFT' && onReviewSingleFund && (
+                      <button
+                        onClick={() => onReviewSingleFund(row.symbolCode, 'UNDER_REVIEW')}
+                        title="Submit this specific fund for review"
+                        className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1"
+                      >
+                        <CheckCircle2 className="w-3 h-3 text-amber-600" />
+                        Submit Fund
+                      </button>
+                    )}
+
+                    {row.reviewStatus === 'UNDER_REVIEW' && onReviewSingleFund && (
+                      <button
+                        onClick={() => onReviewSingleFund(row.symbolCode, 'APPROVED')}
+                        title="Approve & Lock this specific fund"
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 shadow-sm"
+                      >
+                        <ShieldCheck className="w-3 h-3" />
+                        Approve Fund
+                      </button>
+                    )}
+
+                    {row.reviewStatus === 'APPROVED' && (
+                      <span className="text-emerald-700 font-bold text-[10px] flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Approved
+                      </span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -270,6 +319,7 @@ export function TransferSheetView({
               >
                 {formatFinancialNumber(totalNet)}
               </td>
+              <td colSpan={2}></td>
             </tr>
           </tfoot>
         </table>

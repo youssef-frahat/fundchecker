@@ -10,18 +10,25 @@ export interface NettingSummary {
   totalSymbols: number;
 }
 
+export interface FundReviewState {
+  reviewStatus: 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED';
+  makerName?: string;
+  checkerName?: string;
+  approvedAt?: string;
+}
+
 /**
  * Aggregates raw trading transactions into Netting Transfer Rows.
- * Grouping can be by 'symbol' or 'actual_symbol'.
  */
 export function calculateNettingSheet(
   transactions: RawTransactionRow[],
   referenceDataList: ReferenceData[],
-  groupBy: 'symbol' | 'actual_symbol' = 'symbol'
+  groupBy: 'symbol' | 'actual_symbol' = 'symbol',
+  perFundReviewStates: Record<string, FundReviewState> = {}
 ): NettingSummary {
   const map = new Map<string, { buy: number; sell: number; ref?: ReferenceData }>();
 
-  // Initialize map with reference data symbols so all registered funds appear in sheet
+  // Initialize map with reference data symbols
   for (const ref of referenceDataList) {
     const key = groupBy === 'actual_symbol' ? ref.actualSymbol : ref.symbolCode;
     if (!map.has(key)) {
@@ -32,9 +39,11 @@ export function calculateNettingSheet(
   // Aggregate transaction values
   for (const tx of transactions) {
     const rawSymbol = tx.symbol;
-    // Find reference data match by symbolCode or actualSymbol
     const refMatch = referenceDataList.find(
-      (r) => r.symbolCode.toLowerCase() === rawSymbol.toLowerCase() || r.actualSymbol.toLowerCase() === rawSymbol.toLowerCase()
+      (r) =>
+        r.symbolCode.toLowerCase() === rawSymbol.toLowerCase() ||
+        r.actualSymbol.toLowerCase() === rawSymbol.toLowerCase() ||
+        r.symbolName.toLowerCase() === tx.symbolDescription.toLowerCase()
     );
 
     const groupKey = groupBy === 'actual_symbol' 
@@ -72,6 +81,7 @@ export function calculateNettingSheet(
     else if (netAmount < 0) status = 'NEGATIVE';
 
     const isUsd = symbolCode.toUpperCase().includes('USD') || actualSymbol.toUpperCase().includes('USD');
+    const fundState = perFundReviewStates[symbolCode] || { reviewStatus: 'DRAFT' };
 
     rows.push({
       symbolCode,
@@ -82,13 +92,16 @@ export function calculateNettingSheet(
       netAmount,
       currency: isUsd ? 'USD' : 'EGP',
       status,
+      reviewStatus: fundState.reviewStatus,
+      makerName: fundState.makerName,
+      checkerName: fundState.checkerName,
+      approvedAt: fundState.approvedAt,
     });
 
     totalBuy += buyTotal;
     totalSell += sellTotal;
   }
 
-  // Sort rows alphabetically by Symbol Code
   rows.sort((a, b) => a.symbolCode.localeCompare(b.symbolCode));
 
   const totalNet = Math.round((totalSell - totalBuy) * 100) / 100;
@@ -102,12 +115,6 @@ export function calculateNettingSheet(
   };
 }
 
-/**
- * Formats monetary numbers according to financial UI standards:
- * - Positive: "1,405,265.35"
- * - Negative: "(275,464.47)"
- * - Zero: "-"
- */
 export function formatFinancialNumber(val: number): string {
   if (val === 0 || !val) return '-';
   const absVal = Math.abs(val).toLocaleString('en-US', {

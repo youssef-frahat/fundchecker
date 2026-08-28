@@ -14,9 +14,6 @@ export async function computeFileHash(file: File): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * Safely extracts raw string text from any ExcelJS cell type (RichText, Formula, Date, etc.)
- */
 function extractCellValue(cell: ExcelJS.Cell): string {
   if (cell.value === null || cell.value === undefined) return '';
   if (cell.value instanceof Date) return cell.value.toISOString();
@@ -37,9 +34,6 @@ function extractCellValue(cell: ExcelJS.Cell): string {
   return String(cell.value).trim();
 }
 
-/**
- * Safely extracts numeric value from an ExcelJS cell.
- */
 function extractNumericValue(cell: ExcelJS.Cell): number {
   const rawStr = extractCellValue(cell);
   if (!rawStr) return 0;
@@ -50,7 +44,6 @@ function extractNumericValue(cell: ExcelJS.Cell): number {
 
 /**
  * Parses raw trading Excel file into RawTransactionRow objects.
- * Dynamically detects column headers or falls back to standard 39-column index locations.
  */
 export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]> {
   const buffer = await file.arrayBuffer();
@@ -62,20 +55,18 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
     throw new Error('Workbook contains no data rows.');
   }
 
-  // Default Column Indices (1-indexed based on 39-column specification)
-  let colRequestId = 1;      // Col A: Request Id
-  let colMubasherNo = 2;     // Col B: Mubasher No
-  let colCustomerName = 3;   // Col C: Customer Name
-  let colOrderSide = 4;      // Col D: Order Side
-  let colSymbol = 5;         // Col E: Symbol
-  let colSymbolDesc = 6;     // Col F: Symbol Description
-  let colQuantity = 10;      // Col J: Quantity
-  let colPrice = 11;         // Col K: Price
-  let colOrderValue = 12;    // Col L: Order Value
-  let colIsinCode = 18;      // Col R: ISIN Code
-  let colOrderDate = 25;     // Col Y: Order Date
+  let colRequestId = 1;
+  let colMubasherNo = 2;
+  let colCustomerName = 3;
+  let colOrderSide = 4;
+  let colSymbol = 5;
+  let colSymbolDesc = 6;
+  let colQuantity = 10;
+  let colPrice = 11;
+  let colOrderValue = 12;
+  let colIsinCode = 18;
+  let colOrderDate = 25;
 
-  // Inspect Row 1 to dynamically detect exact header positions
   const headerRow = worksheet.getRow(1);
   let foundHeaders = false;
 
@@ -123,7 +114,7 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
   const fileId = `file-${Date.now()}`;
 
   worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1 && foundHeaders) return; // Skip header row if headers detected
+    if (rowNumber === 1 && foundHeaders) return;
 
     const requestId = extractCellValue(row.getCell(colRequestId)) || `REQ-${rowNumber}`;
     const mubasherNo = extractCellValue(row.getCell(colMubasherNo));
@@ -137,14 +128,12 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
     const isinCode = extractCellValue(row.getCell(colIsinCode));
     const orderDateRaw = extractCellValue(row.getCell(colOrderDate));
 
-    // Determine effective symbol and product description
     const effectiveSymbol = symbol || symbolDescription || `SYM-${rowNumber}`;
     const effectiveDescription = symbolDescription || symbol || effectiveSymbol;
 
-    // Determine normalized order side (BUY vs SELL)
     let orderSide = rawOrderSide.toUpperCase();
     if (!orderSide || (!orderSide.includes('BUY') && !orderSide.includes('SELL'))) {
-      orderSide = 'BUY'; // Fallback default
+      orderSide = 'BUY';
     } else if (orderSide.includes('BUY')) {
       orderSide = 'BUY';
     } else if (orderSide.includes('SELL')) {
@@ -174,6 +163,73 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
 }
 
 /**
+ * Generates an Excel workbook containing ONLY a single selected Fund's transaction sheet.
+ */
+export async function exportSingleFundTransactionSheet(
+  allRows: GeneratedTransactionRow[],
+  productName: string
+): Promise<Blob> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Investment Management Platform';
+
+  const fundRows = allRows.filter((r) => r.productName === productName);
+  const safeSheetName = productName.substring(0, 31).replace(/[\/*?:[\]]/g, '_');
+  const ws = workbook.addWorksheet(safeSheetName || 'Fund Sheet');
+
+  ws.addRow([
+    'Transaction ID',
+    'Transaction Type',
+    'Transaction Date',
+    'External Code',
+    'Name',
+    'Transaction Value',
+    'Qty',
+    'Branch ID',
+    'Value Date',
+    'IC Price',
+    'Fees',
+  ]);
+
+  const headerRow = ws.getRow(1);
+  headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
+  headerRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: '059669' },
+  };
+
+  for (const item of fundRows) {
+    ws.addRow([
+      item.transactionId,
+      item.transactionType,
+      item.transactionDate,
+      item.externalCode,
+      item.name,
+      item.transactionValue !== null ? item.transactionValue : '',
+      item.qty !== null ? item.qty : '',
+      item.branchId,
+      item.valueDate,
+      item.icPrice,
+      item.fees,
+    ]);
+  }
+
+  ws.columns.forEach((col) => {
+    let maxLen = 12;
+    col.eachCell!({ includeEmpty: true }, (cell) => {
+      const valStr = cell.value ? String(cell.value) : '';
+      if (valStr.length > maxLen) maxLen = valStr.length;
+    });
+    col.width = Math.min(maxLen + 4, 40);
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
+
+/**
  * Generates an Excel workbook with sheets per Product sorted alphabetically,
  * reproducing the exact logic of VBA Sub ExportPerProduct_PerSheet_FromF_Alphabetical.
  */
@@ -183,7 +239,6 @@ export async function exportTransactionSheetsPerProduct(
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Investment Management Platform';
 
-  // Group rows by product name (Symbol Description / Column F)
   const productMap = new Map<string, GeneratedTransactionRow[]>();
   for (const row of rows) {
     const prod = row.productName.trim() || 'Uncategorized';
@@ -193,7 +248,6 @@ export async function exportTransactionSheetsPerProduct(
     productMap.get(prod)!.push(row);
   }
 
-  // Sort product keys alphabetically (matches VBA QuickSort)
   const sortedProducts = Array.from(productMap.keys()).sort((a, b) =>
     a.localeCompare(b, undefined, { sensitivity: 'base' })
   );
@@ -202,7 +256,6 @@ export async function exportTransactionSheetsPerProduct(
     const safeSheetName = prodKey.substring(0, 31).replace(/[\/*?:[\]]/g, '_');
     const ws = workbook.addWorksheet(safeSheetName);
 
-    // Headers Column A-K
     ws.addRow([
       'Transaction ID',
       'Transaction Type',
@@ -222,7 +275,7 @@ export async function exportTransactionSheetsPerProduct(
     headerRow.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: '1E293B' },
+      fgColor: { argb: '059669' },
     };
 
     const prodRows = productMap.get(prodKey)!;

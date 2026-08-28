@@ -1,11 +1,11 @@
-// Generated Transaction Reports Component (White & Emerald Green Theme)
+// Generated Transaction Reports Component (White & Emerald Green Theme with Granular Per-Sheet Download)
 
 'use client';
 
 import React, { useState } from 'react';
-import { Download, Layers } from 'lucide-react';
+import { Download, Layers, FileSpreadsheet } from 'lucide-react';
 import { GeneratedTransactionRow } from '@/lib/types';
-import { exportTransactionSheetsPerProduct } from '@/lib/excel-engine';
+import { exportSingleFundTransactionSheet, exportTransactionSheetsPerProduct } from '@/lib/excel-engine';
 
 interface TransactionReportTableProps {
   rows: GeneratedTransactionRow[];
@@ -29,12 +29,24 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
     return matchesTab && matchesSearch;
   });
 
-  const handleExportExcel = async () => {
+  const handleExportAllExcel = async () => {
     const blob = await exportTransactionSheetsPerProduct(rows);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Transaction_Reports_${new Date().toISOString().split('T')[0]}_v1.xlsx`;
+    a.download = `All_Transaction_Reports_${new Date().toISOString().split('T')[0]}_v1.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleExportSingleFund = async (productName: string) => {
+    const blob = await exportSingleFundTransactionSheet(rows, productName);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeName = productName.replace(/[^a-zA-Z0-9]/g, '_');
+    a.download = `${safeName}_Transaction_Sheet_${new Date().toISOString().split('T')[0]}_v1.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -52,7 +64,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
             </h3>
           </div>
           <p className="text-xs text-slate-600 mt-1">
-            Evaluated against dynamic T0/T1 settlement visibility matrices. Export matches VBA macro structure.
+            Evaluated against dynamic T0/T1 settlement visibility matrices. Export full workbook or individual fund sheet.
           </p>
         </div>
 
@@ -65,12 +77,22 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
             className="bg-slate-50 border border-slate-300 px-3 py-1.5 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-emerald-600 w-48"
           />
 
+          {activeTab !== 'All' && (
+            <button
+              onClick={() => handleExportSingleFund(activeTab)}
+              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-3 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-sm"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              Download "{activeTab.substring(0, 15)}..." Sheet
+            </button>
+          )}
+
           <button
-            onClick={handleExportExcel}
+            onClick={handleExportAllExcel}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-2 shadow-md shadow-emerald-600/20"
           >
             <Download className="w-4 h-4" />
-            Export Alphabetical Excel Sheets
+            Export All Alphabetical Sheets
           </button>
         </div>
       </div>
@@ -96,7 +118,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
               onClick={() => setActiveTab(prod)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition flex items-center gap-1.5 ${
                 activeTab === prod
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 bg-slate-100'
               }`}
             >

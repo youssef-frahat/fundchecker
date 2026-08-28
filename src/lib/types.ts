@@ -88,6 +88,26 @@ export interface NettingRow {
   netAmount: number; // sellTotal - buyTotal
   currency: 'EGP' | 'USD';
   status: 'NEUTRAL' | 'POSITIVE' | 'NEGATIVE';
+  reviewStatus: 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED';
+  makerName?: string;
+  checkerName?: string;
+  approvedAt?: string;
+}
+
+export interface ReviewApproval {
+  id: string;
+  entityType: 'TRANSFER_SHEET' | 'TRANSACTION_REPORT' | 'CHECKLIST';
+  entityId: string;
+  makerUserId: string;
+  makerUserName: string;
+  makerCompletedAt: string;
+  checkerUserId?: string;
+  checkerUserName?: string;
+  checkerApprovedAt?: string;
+  status: 'PENDING' | 'COMPLETED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  reopenedBy?: string;
+  reopenedAt?: string;
+  reopenReason?: string;
 }
 
 export interface UploadedFileRecord {
@@ -114,23 +134,6 @@ export interface ExceptionRecord {
   resolvedBy?: string;
   resolvedAt?: string;
   createdAt: string;
-}
-
-export interface ReviewApproval {
-  id: string;
-  entityType: 'TRANSFER_SHEET' | 'TRANSACTION_REPORT' | 'CHECKLIST';
-  entityId: string;
-  makerUserId: string;
-  makerUserName: string;
-  makerCompletedAt: string;
-  checkerUserId?: string;
-  checkerUserName?: string;
-  checkerApprovedAt?: string;
-  status: 'PENDING' | 'COMPLETED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
-  reopenedBy?: string;
-  reopenedAt?: string;
-  reopenReason?: string;
-  digitalConfirmationText?: string;
 }
 
 export interface ChecklistItem {
@@ -162,14 +165,4 @@ export interface AuditLog {
   newValues?: Record<string, unknown>;
   ipAddress: string;
   timestampUtc: string;
-}
-
-export interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  type: 'INFO' | 'WARNING' | 'CRITICAL';
-  isRead: boolean;
-  createdAt: string;
-  linkUrl?: string;
 }
