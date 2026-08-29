@@ -1,4 +1,4 @@
-// Generated Transaction Reports Component (White & Emerald Green Theme with Granular Per-Sheet Download)
+// Generated Transaction Reports Component (White & Emerald Green Theme with Enterprise Command Bar)
 
 'use client';
 
@@ -19,6 +19,40 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
   );
 
   const [activeTab, setActiveTab] = useState<string>(products[0] || 'All');
+
+  // Category classification helper
+  const [selectedCategory, setSelectedCategory] = useState<'ALL' | 'T0_CASH' | 'T1_EQUITY' | 'GOLD' | 'USD'>('ALL');
+  const [fundSearch, setFundSearch] = useState('');
+
+  // Calculate Fund KPIs for selected fund
+  const activeFundRows = activeTab === 'All' ? rows : rows.filter((r) => r.productName === activeTab);
+  const activeBuyTotal = activeFundRows
+    .filter((r) => r.transactionType?.toLowerCase() === 'buy')
+    .reduce((acc, r) => acc + (r.transactionValue || 0), 0);
+  const activeSellTotal = activeFundRows
+    .filter((r) => r.transactionType?.toLowerCase() === 'sell')
+    .reduce((acc, r) => acc + (r.transactionValue || 0), 0);
+  const activeNetBalance = activeSellTotal - activeBuyTotal;
+
+  const categorizedProducts = products.filter((prod) => {
+    const pLower = prod.toLowerCase();
+    if (selectedCategory === 'T0_CASH') {
+      return pLower.includes('cash') || pLower.includes('money') || pLower.includes('horus') || pLower.includes('tamayoz') || pLower.includes('al-siola');
+    }
+    if (selectedCategory === 'T1_EQUITY') {
+      return pLower.includes('equity') || pLower.includes('foras') || pLower.includes('egx') || pLower.includes('wethaq') || pLower.includes('shariah') || pLower.includes('wafra');
+    }
+    if (selectedCategory === 'GOLD') {
+      return pLower.includes('gold') || pLower.includes('dahab') || pLower.includes('sabayek') || pLower.includes('silver');
+    }
+    if (selectedCategory === 'USD') {
+      return pLower.includes('usd');
+    }
+    return true;
+  }).filter((prod) => {
+    if (!fundSearch.trim()) return true;
+    return prod.toLowerCase().includes(fundSearch.toLowerCase());
+  });
 
   const filteredRows = rows.filter((r) => {
     const matchesTab = activeTab === 'All' || r.productName === activeTab;
@@ -54,7 +88,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-      {/* Top Header & Actions */}
+      {/* Top Header & Global Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -64,7 +98,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
             </h3>
           </div>
           <p className="text-xs text-slate-600 mt-1">
-            Evaluated against dynamic T0/T1 settlement visibility matrices. Export full workbook or individual fund sheet.
+            Enterprise Command Bar: Select from {products.length} operational funds. View dynamic settlement rules and granular per-fund exports.
           </p>
         </div>
 
@@ -83,7 +117,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
               className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-3 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-sm"
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              Download "{activeTab.substring(0, 15)}..." Sheet
+              Download "{activeTab.substring(0, 16)}..." Sheet
             </button>
           )}
 
@@ -92,43 +126,101 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-2 shadow-md shadow-emerald-600/20"
           >
             <Download className="w-4 h-4" />
-            Export All Alphabetical Sheets
+            Export All {products.length} Sheets (.xlsx)
           </button>
         </div>
       </div>
 
-      {/* Alphabetical Product Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-slate-100 scrollbar-none">
-        <button
-          onClick={() => setActiveTab('All')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
-            activeTab === 'All'
-              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              : 'text-slate-600 hover:text-slate-900 bg-slate-100'
-          }`}
-        >
-          All Products ({rows.length})
-        </button>
+      {/* Enterprise Fund Command Bar (Scalable for 50+ Funds without Horizontal Scrolling) */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Category Filter Pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold text-slate-500 mr-1">Category:</span>
+            {[
+              { key: 'ALL', label: `All Funds (${products.length})` },
+              { key: 'T0_CASH', label: 'T0 Money Market' },
+              { key: 'T1_EQUITY', label: 'T1 Equity' },
+              { key: 'GOLD', label: 'Gold & Commodities' },
+              { key: 'USD', label: 'USD Funds' },
+            ].map((cat) => (
+              <button
+                key={cat.key}
+                onClick={() => {
+                  setSelectedCategory(cat.key as any);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                  selectedCategory === cat.key
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
 
-        {products.map((prod) => {
-          const prodCount = rows.filter((r) => r.productName === prod).length;
-          return (
-            <button
-              key={prod}
-              onClick={() => setActiveTab(prod)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition flex items-center gap-1.5 ${
-                activeTab === prod
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 bg-slate-100'
-              }`}
+          {/* Fund Search inside dropdown */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Quick search fund..."
+              value={fundSearch}
+              onChange={(e) => setFundSearch(e.target.value)}
+              className="bg-white border border-slate-300 px-2.5 py-1 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-emerald-600 w-36"
+            />
+          </div>
+        </div>
+
+        {/* Scalable Fund Selector Dropdown & Live Financial Snapshot */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-2 border-t border-slate-200/80">
+          <div className="flex items-center gap-2 flex-1">
+            <label className="text-xs font-bold text-slate-700 whitespace-nowrap">Active Fund:</label>
+            <select
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value)}
+              className="bg-white border-2 border-emerald-600 text-emerald-900 font-bold px-3 py-2 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 max-w-md w-full shadow-sm"
             >
-              <span>{prod}</span>
-              <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full font-bold">
-                {prodCount}
+              <option value="All">All Operations ({rows.length} total orders)</option>
+              {categorizedProducts.map((prod) => {
+                const count = rows.filter((r) => r.productName === prod).length;
+                return (
+                  <option key={prod} value={prod}>
+                    {prod} — ({count} orders)
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {/* Instant Financial KPI Badges for Selected Fund */}
+          <div className="flex items-center gap-3 flex-wrap text-xs">
+            <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs">
+              <span className="text-slate-500 font-medium">Orders:</span>
+              <span className="font-bold text-slate-900">{activeFundRows.length}</span>
+            </div>
+            <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs">
+              <span className="text-emerald-700 font-medium">Buy:</span>
+              <span className="font-bold text-emerald-700">EGP {activeBuyTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs">
+              <span className="text-rose-700 font-medium">Sell:</span>
+              <span className="font-bold text-rose-700">EGP {activeSellTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className={`px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 ${
+              activeNetBalance >= 0
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}>
+              <span>Net:</span>
+              <span>
+                {activeNetBalance < 0
+                  ? `(${Math.abs(activeNetBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })})`
+                  : activeNetBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
-            </button>
-          );
-        })}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* 11-Column Transaction Table */}
@@ -145,14 +237,13 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
               <th className="p-3 text-right">Qty</th>
               <th className="p-3 text-center">Branch ID</th>
               <th className="p-3">Value Date</th>
-              <th className="p-3 text-right">IC Price</th>
               <th className="p-3 text-center">Fees</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={11} className="p-8 text-center text-slate-500 font-sans">
+                <td colSpan={10} className="p-8 text-center text-slate-500 font-sans">
                   No transaction records match the selected tab or search query.
                 </td>
               </tr>
@@ -190,9 +281,6 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
                   </td>
                   <td className="p-3 text-center text-slate-600">{row.branchId}</td>
                   <td className="p-3 text-slate-600">{row.valueDate}</td>
-                  <td className="p-3 text-right text-slate-800">
-                    {row.icPrice.toLocaleString('en-US', { minimumFractionDigits: 4 })}
-                  </td>
                   <td className="p-3 text-center text-slate-600">{row.fees}</td>
                 </tr>
               ))

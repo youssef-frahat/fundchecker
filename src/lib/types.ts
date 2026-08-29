@@ -1,6 +1,6 @@
 // Investment Management Platform - Commercial Enterprise Domain Models
 
-export type UserRole = 'SUPER_ADMIN' | 'OPERATIONS_USER';
+export type UserRole = 'SUPER_ADMIN' | 'OPERATIONS_USER' | 'TRADING_OPERATOR' | 'OPERATIONS_CHECKER' | 'AUDITOR';
 
 export interface User {
   id: string;
@@ -19,7 +19,7 @@ export interface Fund {
   fundCode: string; // e.g. "1001", "AHLAC"
   fundName: string; // e.g. "AZ - ADKHAR"
   fundType: SettlementType; // "T0", "T1", "T2", "DVP"
-  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'CLOSED';
   createdAt: string;
 }
 
@@ -38,8 +38,11 @@ export interface ReferenceData {
   actualSymbol: string;   // الرمز2 (e.g. "AFAC")
   emailContact?: string;  // Email for future notifications
   navUnitPrice: number;   // سعر الوثيقة الواحدة
+  fundType: SettlementType; // PROC-3: T0/T1/T2/DVP — used for rule evaluation
   fundId?: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'CLOSED';
+  scheduleFrequency?: string;
+  executionInstruction?: string;
 }
 
 export interface RawTransactionRow {
@@ -52,6 +55,7 @@ export interface RawTransactionRow {
   symbol: string;            // Col E: Symbol
   symbolDescription: string; // Col F: Symbol Description (Product Name)
   orderStatus?: string;      // Col G
+  allocatedQuantity?: number;// Col 35: Allocated Quantity
   bookKeeper?: string;       // Col H
   currency?: string;         // Col I
   quantity: number;          // Col J: Quantity
@@ -175,4 +179,94 @@ export interface SystemHealthMetric {
   supabaseStatus: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
   lastBackupAt: string;
   activeConnections: number;
+}
+
+export type TransferBatchStatus = 'DRAFT' | 'MODIFIED' | 'PENDING_REVIEW' | 'APPROVED' | 'LOCKED';
+
+export interface TransferSheetBatch {
+  id: string;
+  batchNumber: string;
+  allocationFileId: string;
+  businessDate: string;
+  status: TransferBatchStatus;
+  totalBuyAmount: number;
+  totalSellAmount: number;
+  totalNetAmount: number;
+  makerId: string;
+  makerName?: string;
+  checkerId?: string;
+  checkerName?: string;
+  rejectionReason?: string;
+  approvedAt?: string;
+  lockedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  lines?: TransferSheetLine[];
+}
+
+export type AdjustmentCategory = 
+  | 'BANK_FEE'
+  | 'SETTLEMENT_DIFFERENCE'
+  | 'CUSTODIAN_CORRECTION'
+  | 'MANUAL_ADJUSTMENT'
+  | 'OTHER';
+
+export interface TransferSheetLine {
+  id: string;
+  batchId: string;
+  symbolCode: string;
+  symbolName: string;
+  actualSymbol?: string;
+  systemBuyAmount: number;     // Immutable market execution
+  systemSellAmount: number;    // Immutable market execution
+  systemNetAmount: number;     // systemSellAmount - systemBuyAmount
+  adjustmentAmount: number;    // Only field edited by operations (default 0)
+  adjustmentCategory?: AdjustmentCategory;
+  adjustmentReason?: string;
+  finalTransferAmount: number; // systemNetAmount + adjustmentAmount
+  isManuallyAdjusted: boolean;
+  adjustments?: TransferLineAdjustment[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TransferLineAdjustment {
+  id: string;
+  batchId: string;
+  lineId: string;
+  symbolCode: string;
+  systemNetSnapshot: number;
+  oldAdjustmentAmount: number;
+  newAdjustmentAmount: number;
+  delta: number;
+  resultingFinalTransfer: number;
+  adjustmentCategory: AdjustmentCategory;
+  reason: string;
+  userId: string;
+  userName: string;
+  clientIp: string;
+  timestampUtc: string;
+}
+
+export interface FundSchedule {
+  id: string;
+  scheduleName: string;
+  patternType: 'DAY_OF_MONTH' | 'NTH_WEEKDAY' | 'COMPOUND_WEEKDAY' | 'LAST_WEEKDAY' | 'DAILY' | 'CUSTOM';
+  dayOfMonth?: number;
+  weekdayIndex?: number;
+  weekOccurrences?: number[];
+  isActive: boolean;
+  createdAt?: string;
+}
+
+export interface ScheduleReminderItem {
+  id: string;
+  fundCode: string;
+  fundName: string;
+  type: 'NOTICE_DUE' | 'EXECUTION_DUE';
+  title: string;
+  message: string;
+  rawInstruction: string;
+  cutoffTime?: string;
+  urgency: 'HIGH' | 'MEDIUM' | 'INFO';
 }

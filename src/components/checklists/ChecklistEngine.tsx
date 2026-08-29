@@ -61,8 +61,14 @@ export function ChecklistEngine({
 
       {/* Checklist Tasks */}
       <div className="space-y-3">
-        {items.map((item) => (
-          <div
+        {items.length === 0 ? (
+          <div className="p-8 text-center border border-dashed border-slate-300 rounded-xl text-slate-500 text-xs">
+            No checklists found in the database. Run <code className="bg-slate-100 px-1 py-0.5 rounded text-rose-700 font-mono">supabase/schema.sql</code> in the Supabase SQL editor to seed operational checklists.
+          </div>
+        ) : (
+          items.map((item) => (
+            <div
+
             key={item.id}
             className={`p-4 rounded-xl border transition-all ${
               item.isCompleted
@@ -148,8 +154,9 @@ export function ChecklistEngine({
               )}
             </div>
           </div>
-        ))}
+        )))}
       </div>
+
 
       {/* Super Admin Reopen Modal */}
       {reopenModal && (

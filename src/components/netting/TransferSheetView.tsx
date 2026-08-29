@@ -1,21 +1,26 @@
-// Transfer Netting Sheet Component (Enterprise Commercial White & Emerald Green Theme)
-
-'use client';
+// TransferSheetView Component - Enterprise Cash Transfer Netting Sheet
+// Enforces: System Net Transfer (Immutable) + Adjustment Amount (Category-driven) = Final Transfer Amount
+// Maker-Checker 4-Eyes Principle & Immutable Audit Trail
 
 import React, { useState } from 'react';
 import {
-  Download,
-  CheckCircle2,
-  ShieldCheck,
-  ArrowRightLeft,
   FileCheck,
-  Check,
-  AlertTriangle,
+  CheckCircle2,
   Lock,
+  Download,
+  AlertCircle,
+  Clock,
+  Edit3,
+  History,
+  Info,
+  DollarSign,
+  Layers,
+  ChevronRight,
+  Sparkles,
+  UploadCloud,
+  FileSpreadsheet,
 } from 'lucide-react';
-import { NettingRow, UserRole } from '@/lib/types';
-import { exportNettingSheet, exportSingleFundTransactionSheet } from '@/lib/excel-engine';
-import { formatFinancialNumber } from '@/lib/netting-engine';
+import { AdjustmentCategory, NettingRow, TransferSheetBatch, TransferSheetLine, UserRole } from '@/lib/types';
 
 interface TransferSheetViewProps {
   nettingRows: NettingRow[];
@@ -24,390 +29,631 @@ interface TransferSheetViewProps {
   totalNet: number;
   currentRole: UserRole;
   reviewStatus: 'DRAFT' | 'GENERATED' | 'UNDER_REVIEW' | 'APPROVED';
+  batch?: TransferSheetBatch | null;
   makerName?: string;
   checkerName?: string;
   onMakerSubmit: () => void;
   onCheckerApprove: () => void;
+  onNavigateToUpload?: () => void;
+  onAdjustLine?: (
+    lineId: string,
+    symbolCode: string,
+    systemNetSnapshot: number,
+    oldAdjustmentAmount: number,
+    newAdjustmentAmount: number,
+    adjustmentCategory: AdjustmentCategory,
+    reason: string
+  ) => Promise<void>;
   onReviewSingleFund?: (symbolCode: string, newStatus: 'UNDER_REVIEW' | 'APPROVED') => void;
 }
 
-export function TransferSheetView({
+const CATEGORY_LABELS: Record<AdjustmentCategory, string> = {
+  BANK_FEE: 'Bank Fee',
+  SETTLEMENT_DIFFERENCE: 'Settlement Difference',
+  CUSTODIAN_CORRECTION: 'Custodian Correction',
+  MANUAL_ADJUSTMENT: 'Manual Adjustment',
+  OTHER: 'Other',
+};
+
+export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
   nettingRows,
   totalBuy,
   totalSell,
   totalNet,
   currentRole,
   reviewStatus,
+  batch,
   makerName,
   checkerName,
   onMakerSubmit,
   onCheckerApprove,
-  onReviewSingleFund,
-}: TransferSheetViewProps) {
+  onNavigateToUpload,
+  onAdjustLine,
+}) => {
   const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'EGP' | 'USD'>('ALL');
-  const [declarationModal, setDeclarationModal] = useState<{
-    actionType: 'SUBMIT_ALL' | 'APPROVE_ALL' | 'SUBMIT_SINGLE' | 'APPROVE_SINGLE';
-    symbolCode?: string;
+
+  // Adjustment Modal State
+  const [editingModal, setEditingModal] = useState<{
+    lineId: string;
+    symbolCode: string;
+    symbolName: string;
+    systemNet: number;
+    currentAdjustment: number;
+    currentCategory: AdjustmentCategory;
   } | null>(null);
-  const [declarationChecked, setDeclarationChecked] = useState(false);
 
-  const filteredRows = nettingRows.filter((r) => {
-    if (currencyFilter === 'ALL') return true;
-    return r.currency === currencyFilter;
-  });
+  const [adjustmentCategory, setAdjustmentCategory] = useState<AdjustmentCategory>('MANUAL_ADJUSTMENT');
+  const [adjustmentAmountInput, setAdjustmentAmountInput] = useState<string>('0');
+  const [adjustmentReason, setAdjustmentReason] = useState<string>('');
+  const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
+  const [isSubmittingAdjustment, setIsSubmittingAdjustment] = useState<boolean>(false);
+  const [selectedAuditHistory, setSelectedAuditHistory] = useState<TransferSheetLine | null>(null);
 
-  const handleExportNettingExcel = async () => {
-    const blob = await exportNettingSheet(filteredRows, totalBuy, totalSell, totalNet);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Transfer_Netting_Sheet_${new Date().toISOString().split('T')[0]}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  const isLocked = batch?.status === 'LOCKED' || reviewStatus === 'APPROVED';
+  const isPendingReview = batch?.status === 'PENDING_REVIEW' || reviewStatus === 'UNDER_REVIEW';
+  const isAuditor = (currentRole as string) === 'AUDITOR';
+  const canEdit = !isLocked && !isPendingReview && !isAuditor;
+  const canApprove = !isLocked && ((currentRole as string) === 'OPERATIONS_CHECKER' || currentRole === 'SUPER_ADMIN');
+
+  // Derive lines from batch if available, or fall back to processed nettingRows
+  const activeLines: TransferSheetLine[] = (batch?.lines && batch.lines.length > 0)
+    ? batch.lines
+    : (nettingRows && nettingRows.length > 0)
+    ? nettingRows.map((nr, idx) => ({
+        id: `draft-line-${idx}-${nr.symbolCode}`,
+        batchId: batch?.id || 'draft-batch',
+        symbolCode: nr.symbolCode,
+        symbolName: nr.symbolName,
+        actualSymbol: nr.actualSymbol,
+        systemBuyAmount: nr.buyTotal,
+        systemSellAmount: nr.sellTotal,
+        systemNetAmount: nr.netAmount,
+        adjustmentAmount: 0,
+        finalTransferAmount: nr.netAmount,
+        isManuallyAdjusted: false,
+        status: 'PENDING' as const,
+        adjustments: [],
+      }))
+    : [];
+
+  const handleOpenEditModal = (line: TransferSheetLine) => {
+    setEditingModal({
+      lineId: line.id,
+      symbolCode: line.symbolCode,
+      symbolName: line.symbolName,
+      systemNet: line.systemNetAmount,
+      currentAdjustment: line.adjustmentAmount || 0,
+      currentCategory: line.adjustmentCategory || 'MANUAL_ADJUSTMENT',
+    });
+    setAdjustmentCategory(line.adjustmentCategory || 'MANUAL_ADJUSTMENT');
+    setAdjustmentAmountInput(String(line.adjustmentAmount || 0));
+    setAdjustmentReason(line.adjustmentReason || '');
+    setAdjustmentError(null);
   };
 
-  const handleConfirmDeclaration = () => {
-    if (!declarationModal || !declarationChecked) return;
-
-    if (declarationModal.actionType === 'SUBMIT_ALL') {
-      onMakerSubmit();
-    } else if (declarationModal.actionType === 'APPROVE_ALL') {
-      onCheckerApprove();
-    } else if (declarationModal.actionType === 'SUBMIT_SINGLE' && declarationModal.symbolCode && onReviewSingleFund) {
-      onReviewSingleFund(declarationModal.symbolCode, 'UNDER_REVIEW');
-    } else if (declarationModal.actionType === 'APPROVE_SINGLE' && declarationModal.symbolCode && onReviewSingleFund) {
-      onReviewSingleFund(declarationModal.symbolCode, 'APPROVED');
+  const handleSaveAdjustment = async () => {
+    if (!editingModal) return;
+    const numVal = parseFloat(adjustmentAmountInput);
+    if (isNaN(numVal)) {
+      setAdjustmentError('Please enter a valid numeric adjustment amount.');
+      return;
+    }
+    if (!adjustmentReason || adjustmentReason.trim().length < 10) {
+      setAdjustmentError('Mandatory justification reason must be at least 10 characters long.');
+      return;
     }
 
-    setDeclarationModal(null);
-    setDeclarationChecked(false);
+    try {
+      setIsSubmittingAdjustment(true);
+      if (onAdjustLine) {
+        await onAdjustLine(
+          editingModal.lineId,
+          editingModal.symbolCode,
+          editingModal.systemNet,
+          editingModal.currentAdjustment,
+          numVal,
+          adjustmentCategory,
+          adjustmentReason.trim()
+        );
+      }
+      setEditingModal(null);
+    } catch (err: unknown) {
+      setAdjustmentError(err instanceof Error ? err.message : 'Adjustment failed.');
+    } finally {
+      setIsSubmittingAdjustment(false);
+    }
   };
 
+  const formatFinancialNumber = (val: number) => {
+    return new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val);
+  };
+
+  // Calculations for KPI cards
+  const totalAdjustments = activeLines.reduce((acc, l) => acc + (l.adjustmentAmount || 0), 0);
+  const totalFinalTransfer = totalNet + totalAdjustments;
+
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+    <div className="space-y-6">
+      {/* Header & Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
-          <div className="flex items-center gap-2">
-            <ArrowRightLeft className="w-5 h-5 text-emerald-600" />
-            <h3 className="font-bold text-lg text-slate-900">
-              Transfer Instructions &amp; Netting Sheet
-            </h3>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+              Transfer Netting Sheet
+            </h2>
+            {batch?.batchNumber && (
+              <span className="text-xs font-mono bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200">
+                {batch.batchNumber}
+              </span>
+            )}
+            {batch?.status && (
+              <span
+                className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
+                  batch.status === 'LOCKED' || reviewStatus === 'APPROVED'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : batch.status === 'PENDING_REVIEW'
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : batch.status === 'MODIFIED'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                {batch.status}
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-600 mt-1">
-            Calculated as <span className="text-emerald-700 font-mono font-bold">NET = Sell - Buy</span> across registered fund symbols. Review or download individually per fund.
+            System Net Transfer = Σ(Allocated Qty × Price) | Final Transfer = System Net + Adjustment Amount
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Currency Filter */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
-            <button
-              onClick={() => setCurrencyFilter('ALL')}
-              className={`px-2.5 py-1 rounded-lg transition ${
-                currencyFilter === 'ALL' ? 'bg-white text-slate-900 font-bold shadow-sm' : 'text-slate-600'
-              }`}
-            >
-              All Currencies
-            </button>
-            <button
-              onClick={() => setCurrencyFilter('EGP')}
-              className={`px-2.5 py-1 rounded-lg transition ${
-                currencyFilter === 'EGP' ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'text-slate-600'
-              }`}
-            >
-              EGP
-            </button>
-            <button
-              onClick={() => setCurrencyFilter('USD')}
-              className={`px-2.5 py-1 rounded-lg transition ${
-                currencyFilter === 'USD' ? 'bg-amber-600 text-white font-bold shadow-sm' : 'text-slate-600'
-              }`}
-            >
-              USD (تحويلات دولار)
-            </button>
-          </div>
-
+          {/* Export button */}
           <button
-            onClick={handleExportNettingExcel}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-2 shadow-md shadow-emerald-600/20"
+            onClick={() => {
+              const csvContent =
+                'data:text/csv;charset=utf-8,' +
+                ['Symbol Code,Fund Name,System Buy,System Sell,System Net Transfer,Adjustment Amount,Final Transfer Amount']
+                  .concat(
+                    activeLines.map(
+                      (l) =>
+                        `"${l.symbolCode}","${l.symbolName}",${l.systemBuyAmount},${l.systemSellAmount},${l.systemNetAmount},${l.adjustmentAmount},${l.finalTransferAmount}`
+                    )
+                  )
+                  .join('\n');
+              const encodedUri = encodeURI(csvContent);
+              const link = document.createElement('a');
+              link.setAttribute('href', encodedUri);
+              link.setAttribute('download', `Transfer_Sheet_${batch?.batchNumber || 'export'}.csv`);
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }}
+            className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 shadow-xs transition"
           >
-            <Download className="w-4 h-4" />
-            Download Full Netting Sheet
+            <Download className="w-4 h-4 text-slate-500" />
+            Export CSV
           </button>
-        </div>
-      </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <span className="text-[11px] font-bold text-slate-500">Total Symbols</span>
-          <div className="text-xl font-extrabold font-mono text-slate-900 mt-1">{filteredRows.length}</div>
-        </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <span className="text-[11px] font-bold text-slate-500">Total Buy Value</span>
-          <div className="text-xl font-extrabold font-mono text-emerald-700 mt-1">
-            {totalBuy.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-          </div>
-        </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <span className="text-[11px] font-bold text-slate-500">Total Sell Value</span>
-          <div className="text-xl font-extrabold font-mono text-rose-700 mt-1">
-            {totalSell.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-          </div>
-        </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <span className="text-[11px] font-bold text-slate-500">Total Net Transfer</span>
-          <div
-            className={`text-xl font-extrabold font-mono mt-1 ${
-              totalNet >= 0 ? 'text-emerald-700' : 'text-rose-700'
-            }`}
-          >
-            {formatFinancialNumber(totalNet)}
-          </div>
-        </div>
-      </div>
+          {!isLocked && (
+            <>
+              {!isPendingReview && !isAuditor && (
+                <button
+                  onClick={onMakerSubmit}
+                  className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition"
+                >
+                  <FileCheck className="w-4 h-4" />
+                  Submit Draft for Review
+                </button>
+              )}
 
-      {/* Global Batch Approval Bar */}
-      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
-              reviewStatus === 'APPROVED'
-                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                : reviewStatus === 'UNDER_REVIEW'
-                ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                : 'bg-slate-200 text-slate-600'
-            }`}
-          >
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900">Batch Netting Review Status:</span>
-              <span
-                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
-                  reviewStatus === 'APPROVED'
-                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                    : reviewStatus === 'UNDER_REVIEW'
-                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                    : 'bg-slate-200 text-slate-700'
-                }`}
-              >
-                {reviewStatus.replace('_', ' ')}
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-600 mt-0.5">
-              Maker: <span className="text-slate-900 font-semibold">{makerName || 'Pending'}</span> | Checker:{' '}
-              <span className="text-slate-900 font-semibold">{checkerName || 'Pending 4-Eyes Sign-off'}</span>
-            </p>
-          </div>
-        </div>
+              {canApprove && (
+                <button
+                  onClick={onCheckerApprove}
+                  className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Approve & Lock Transfer Sheet
+                </button>
+              )}
+            </>
+          )}
 
-        {/* Global Batch Action Buttons */}
-        <div className="flex items-center gap-3">
-          {reviewStatus === 'DRAFT' || reviewStatus === 'GENERATED' ? (
-            <button
-              onClick={() => setDeclarationModal({ actionType: 'SUBMIT_ALL' })}
-              className="bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-amber-600/20"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              Submit All Funds for Review
-            </button>
-          ) : reviewStatus === 'UNDER_REVIEW' ? (
-            <button
-              onClick={() => setDeclarationModal({ actionType: 'APPROVE_ALL' })}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              Checker Approve &amp; Lock All
-            </button>
-          ) : (
-            <div className="flex items-center gap-1 text-emerald-800 text-xs font-bold bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              Batch Approved &amp; Locked
+          {isLocked && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-100 rounded-xl border border-emerald-300">
+              <Lock className="w-4 h-4 text-emerald-600" />
+              Transfer Batch Locked
             </div>
           )}
         </div>
       </div>
 
-      {/* Netting Table with Granular Per-Fund Review & Download Actions */}
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
-        <table className="w-full text-left text-xs font-mono text-slate-800">
-          <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
-            <tr>
-              <th className="p-3">Symbol Code</th>
-              <th className="p-3">Symbol Name</th>
-              <th className="p-3">Actual Symbol</th>
-              <th className="p-3 text-right">Buy (EGP/USD)</th>
-              <th className="p-3 text-right">Sell (EGP/USD)</th>
-              <th className="p-3 text-right">NET (Sell - Buy)</th>
-              <th className="p-3 text-center">Fund Status</th>
-              <th className="p-3 text-center">Per-Fund Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredRows.map((row, idx) => {
-              const formattedNet = formatFinancialNumber(row.netAmount);
-              return (
-                <tr key={idx} className="hover:bg-slate-50 transition">
-                  <td className="p-3 font-semibold text-slate-900">{row.symbolCode}</td>
-                  <td className="p-3 font-sans text-slate-800">{row.symbolName}</td>
-                  <td className="p-3 text-slate-600">{row.actualSymbol}</td>
-                  <td className="p-3 text-right font-semibold text-slate-800">
-                    {row.buyTotal > 0
-                      ? row.buyTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })
-                      : '-'}
-                  </td>
-                  <td className="p-3 text-right font-semibold text-slate-800">
-                    {row.sellTotal > 0
-                      ? row.sellTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })
-                      : '-'}
-                  </td>
-                  <td className="p-3 text-right font-bold">
-                    <span
-                      className={
-                        row.status === 'POSITIVE'
-                          ? 'text-emerald-700'
-                          : row.status === 'NEGATIVE'
-                          ? 'text-rose-700'
-                          : 'text-slate-500'
-                      }
-                    >
-                      {formattedNet}
-                    </span>
-                  </td>
-                  <td className="p-3 text-center">
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                        row.reviewStatus === 'APPROVED'
-                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                          : row.reviewStatus === 'UNDER_REVIEW'
-                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                          : 'bg-slate-100 text-slate-700 border border-slate-200'
-                      }`}
-                    >
-                      {row.reviewStatus}
-                    </span>
-                  </td>
-                  <td className="p-3 text-center flex items-center justify-center gap-1.5">
-                    {row.reviewStatus === 'DRAFT' && onReviewSingleFund && (
-                      <button
-                        onClick={() =>
-                          setDeclarationModal({ actionType: 'SUBMIT_SINGLE', symbolCode: row.symbolCode })
-                        }
-                        title="Submit this specific fund for review"
-                        className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1"
-                      >
-                        <CheckCircle2 className="w-3 h-3 text-amber-600" />
-                        Submit Fund
-                      </button>
-                    )}
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Total System Buy</p>
+          <p className="text-xl font-bold font-mono text-slate-900 mt-1">
+            {formatFinancialNumber(totalBuy)} <span className="text-xs font-sans font-normal text-slate-600">EGP</span>
+          </p>
+          <p className="text-[11px] text-slate-600 mt-1">Immutable Market Execution</p>
+        </div>
 
-                    {row.reviewStatus === 'UNDER_REVIEW' && onReviewSingleFund && (
-                      <button
-                        onClick={() =>
-                          setDeclarationModal({ actionType: 'APPROVE_SINGLE', symbolCode: row.symbolCode })
-                        }
-                        title="Approve & Lock this specific fund"
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 shadow-sm"
-                      >
-                        <ShieldCheck className="w-3 h-3" />
-                        Approve Fund
-                      </button>
-                    )}
+        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Total System Sell</p>
+          <p className="text-xl font-bold font-mono text-slate-900 mt-1">
+            {formatFinancialNumber(totalSell)} <span className="text-xs font-sans font-normal text-slate-600">EGP</span>
+          </p>
+          <p className="text-[11px] text-slate-600 mt-1">Immutable Market Execution</p>
+        </div>
 
-                    {row.reviewStatus === 'APPROVED' && (
-                      <span className="text-emerald-700 font-bold text-[10px] flex items-center gap-1">
-                        <Check className="w-3 h-3 text-emerald-600" /> Approved
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot className="bg-slate-100 font-bold border-t border-slate-200">
-            <tr>
-              <td colSpan={3} className="p-3 text-slate-900 font-sans">
-                TOTAL SUMMARY
-              </td>
-              <td className="p-3 text-right text-emerald-700">
-                {totalBuy.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-              </td>
-              <td className="p-3 text-right text-rose-700">
-                {totalSell.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-              </td>
-              <td
-                className={`p-3 text-right font-extrabold ${
-                  totalNet >= 0 ? 'text-emerald-700' : 'text-rose-700'
-                }`}
-              >
-                {formatFinancialNumber(totalNet)}
-              </td>
-              <td colSpan={2}></td>
-            </tr>
-          </tfoot>
-        </table>
+        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-600">System Net Transfer</p>
+          <p
+            className={`text-xl font-bold font-mono mt-1 ${
+              totalNet >= 0 ? 'text-emerald-700' : 'text-rose-700'
+            }`}
+          >
+            {totalNet >= 0 ? `+${formatFinancialNumber(totalNet)}` : formatFinancialNumber(totalNet)}{' '}
+            <span className="text-xs font-sans font-normal text-slate-600">EGP</span>
+          </p>
+          <p className="text-[11px] text-slate-600 mt-1">System Sell - System Buy</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-4 rounded-xl shadow-xs text-white">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-300">Final Transfer Amount</p>
+          <p className="text-xl font-bold font-mono text-white mt-1">
+            {totalFinalTransfer >= 0
+              ? `+${formatFinancialNumber(totalFinalTransfer)}`
+              : formatFinancialNumber(totalFinalTransfer)}{' '}
+            <span className="text-xs font-sans font-normal text-slate-400">EGP</span>
+          </p>
+          <p className="text-[11px] text-amber-300 mt-1">
+            Net + Adjustments ({totalAdjustments >= 0 ? `+${formatFinancialNumber(totalAdjustments)}` : formatFinancialNumber(totalAdjustments)})
+          </p>
+        </div>
       </div>
 
-      {/* Enterprise Digital Compliance Declaration Modal */}
-      {declarationModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-emerald-200 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-emerald-700 border-b border-slate-100 pb-3">
-              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
-                <FileCheck className="w-6 h-6 text-emerald-600" />
-              </div>
-              <div>
-                <h4 className="font-bold text-base text-slate-900">
-                  Four-Eyes Digital Audit Declaration
-                </h4>
-                <p className="text-xs text-slate-600">Enterprise Compliance Sign-off</p>
-              </div>
-            </div>
+      {/* Main Netting Table */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                <th className="py-3.5 px-4">Fund Code</th>
+                <th className="py-3.5 px-4">Fund Name</th>
+                <th className="py-3.5 px-4 text-right">System Buy (EGP)</th>
+                <th className="py-3.5 px-4 text-right">System Sell (EGP)</th>
+                <th className="py-3.5 px-4 text-right">System Net (EGP)</th>
+                <th className="py-3.5 px-4 text-right">Adjustment (EGP)</th>
+                <th className="py-3.5 px-4 text-right">Final Transfer (EGP)</th>
+                <th className="py-3.5 px-4 text-center">Audit & Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-700">
+              {activeLines.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-500">
+                    <div className="flex flex-col items-center justify-center gap-3">
+                      <FileSpreadsheet className="w-10 h-10 text-slate-300" />
+                      <p className="text-sm font-semibold text-slate-700">
+                        No transfer draft available
+                      </p>
+                      <p className="text-xs text-slate-500 max-w-md">
+                        To generate the transfer netting sheet, please upload your trade allocation file in the Trade Files tab.
+                      </p>
+                      {onNavigateToUpload && (
+                        <button
+                          onClick={onNavigateToUpload}
+                          className="mt-2 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-sm transition"
+                        >
+                          <UploadCloud className="w-4 h-4" />
+                          Go to Trade Files
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                activeLines.map((line) => {
+                  const isPositiveFinal = line.finalTransferAmount >= 0;
+                  const isZeroFinal = line.finalTransferAmount === 0;
+                  const hasAdjustment = line.adjustmentAmount !== 0;
 
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 leading-relaxed font-sans space-y-2">
-              <p className="font-bold text-slate-900">Digital Confirmation Statement:</p>
-              <p className="italic">
-                "I hereby confirm under penalty of audit compliance that I have independently verified all trade execution records, order values, and net settlement calculations against authoritative source files without discrepancy."
+                  return (
+                    <tr key={line.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                        {line.symbolCode}
+                        {line.actualSymbol && line.actualSymbol !== line.symbolCode && (
+                          <span className="text-[10px] text-slate-600 block">{line.actualSymbol}</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-slate-700 font-medium max-w-xs truncate" title={line.symbolName}>
+                        {line.symbolName}
+                      </td>
+
+                      {/* 1. System Buy (Immutable) */}
+                      <td className="py-3 px-4 text-right font-mono text-slate-800">
+                        {formatFinancialNumber(line.systemBuyAmount)}
+                      </td>
+
+                      {/* 2. System Sell (Immutable) */}
+                      <td className="py-3 px-4 text-right font-mono text-slate-800">
+                        {formatFinancialNumber(line.systemSellAmount)}
+                      </td>
+
+                      {/* 3. System Net (Immutable) */}
+                      <td className="py-3 px-4 text-right font-mono font-semibold text-slate-700">
+                        {formatFinancialNumber(line.systemNetAmount)}
+                      </td>
+
+                      {/* 4. Adjustment Amount (Editable with Category) */}
+                      <td className="py-3 px-4 text-right font-mono">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {hasAdjustment && line.adjustmentCategory && (
+                            <span className="text-[9px] font-sans font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                              {CATEGORY_LABELS[line.adjustmentCategory] || line.adjustmentCategory}
+                            </span>
+                          )}
+                          <span
+                            className={`font-semibold ${
+                              hasAdjustment ? 'text-amber-700' : 'text-slate-400'
+                            }`}
+                          >
+                            {line.adjustmentAmount !== 0
+                              ? (line.adjustmentAmount > 0 ? `+${formatFinancialNumber(line.adjustmentAmount)}` : formatFinancialNumber(line.adjustmentAmount))
+                              : '0.00'}
+                          </span>
+
+                          {canEdit && (
+                            <button
+                              onClick={() => handleOpenEditModal(line)}
+                              className="p-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                              title="Adjust Transfer Amount"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* 5. Final Transfer Amount (System Net + Adjustment) */}
+                      <td className="py-3 px-4 text-right font-mono font-bold">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-xs ${
+                            isZeroFinal
+                              ? 'text-slate-400'
+                              : isPositiveFinal
+                              ? 'text-emerald-700 bg-emerald-50'
+                              : 'text-rose-700 bg-rose-50'
+                          }`}
+                        >
+                          {line.finalTransferAmount > 0 ? `+${formatFinancialNumber(line.finalTransferAmount)}` : formatFinancialNumber(line.finalTransferAmount)}
+                        </span>
+                      </td>
+
+                      {/* 6. Audit & Status */}
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {isLocked ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              <Lock className="w-3 h-3" /> Locked
+                            </span>
+                          ) : hasAdjustment ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                              Adjusted
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-slate-600">
+                              System
+                            </span>
+                          )}
+
+                          {line.adjustments && line.adjustments.length > 0 && (
+                            <button
+                              onClick={() => setSelectedAuditHistory(line)}
+                              className="p-1 text-slate-600 hover:text-slate-700 hover:bg-slate-100 rounded transition"
+                              title={`View ${line.adjustments.length} adjustment audit record(s)`}
+                            >
+                              <History className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Adjustment Modal */}
+      {editingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in duration-150">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                Adjust Final Transfer Amount
+              </h3>
+              <p className="text-xs text-slate-600 mt-1">
+                {editingModal.symbolName} ({editingModal.symbolCode})
               </p>
             </div>
 
-            <label className="flex items-start gap-2.5 p-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={declarationChecked}
-                onChange={(e) => setDeclarationChecked(e.target.checked)}
-                className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4"
-              />
-              <span className="text-xs text-slate-800 font-medium">
-                I solemnly agree and execute this digital signature with immutable audit logging.
-              </span>
-            </label>
+            {adjustmentError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{adjustmentError}</span>
+              </div>
+            )}
 
-            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+            <div className="space-y-4">
+              {/* Read-Only System Net Transfer */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-600 font-medium">System Net Transfer (Immutable):</span>
+                  <span className="font-mono font-bold text-slate-900">
+                    {formatFinancialNumber(editingModal.systemNet)} EGP
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-600 mt-1">
+                  Derived directly from execution trades: Σ(Allocated Qty × Price)
+                </p>
+              </div>
+
+              {/* Adjustment Category Dropdown */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Adjustment Category <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={adjustmentCategory}
+                  onChange={(e) => setAdjustmentCategory(e.target.value as AdjustmentCategory)}
+                  className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="BANK_FEE">Bank Fee</option>
+                  <option value="SETTLEMENT_DIFFERENCE">Settlement Difference</option>
+                  <option value="CUSTODIAN_CORRECTION">Custodian Correction</option>
+                  <option value="MANUAL_ADJUSTMENT">Manual Adjustment</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+
+              {/* Adjustment Amount Input */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Adjustment Amount (EGP) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={adjustmentAmountInput}
+                  onChange={(e) => setAdjustmentAmountInput(e.target.value)}
+                  className="w-full text-sm font-mono px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. -500.00 or +1250.00"
+                />
+                <p className="text-[11px] text-slate-600 mt-1">
+                  Enter positive value to add cash, negative value to deduct cash.
+                </p>
+              </div>
+
+              {/* Projected Final Transfer */}
+              <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-blue-900 font-bold">Projected Final Transfer Amount:</span>
+                  <span className="font-mono font-bold text-blue-900 text-sm">
+                    {formatFinancialNumber(
+                      editingModal.systemNet + (parseFloat(adjustmentAmountInput) || 0)
+                    )}{' '}
+                    EGP
+                  </span>
+                </div>
+              </div>
+
+              {/* Mandatory Justification Reason */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Mandatory Justification Reason <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={adjustmentReason}
+                  onChange={(e) => setAdjustmentReason(e.target.value)}
+                  placeholder="State the exact business reason for this adjustment (minimum 10 characters)..."
+                  className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex justify-between items-center text-[10px] text-slate-600 mt-1">
+                  <span>Minimum 10 characters required for audit trail</span>
+                  <span
+                    className={
+                      adjustmentReason.trim().length >= 10 ? 'text-emerald-600 font-bold' : 'text-slate-600'
+                    }
+                  >
+                    {adjustmentReason.trim().length}/10
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <button
-                onClick={() => {
-                  setDeclarationModal(null);
-                  setDeclarationChecked(false);
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
+                type="button"
+                onClick={() => setEditingModal(null)}
+                disabled={isSubmittingAdjustment}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition"
               >
                 Cancel
               </button>
               <button
-                disabled={!declarationChecked}
-                onClick={handleConfirmDeclaration}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 shadow-md shadow-emerald-600/20"
+                type="button"
+                onClick={handleSaveAdjustment}
+                disabled={isSubmittingAdjustment || adjustmentReason.trim().length < 10}
+                className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-xs transition"
               >
-                Confirm &amp; Log Audit Sign-off
+                {isSubmittingAdjustment ? 'Saving...' : 'Save Adjustment'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Audit History Modal */}
+      {selectedAuditHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-xl w-full p-6 space-y-4 animate-in fade-in zoom-in duration-150">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Adjustment Audit Trail</h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {selectedAuditHistory.symbolName} ({selectedAuditHistory.symbolCode})
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedAuditHistory(null)}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 text-xs">
+              {selectedAuditHistory.adjustments?.map((adj) => (
+                <div key={adj.id} className="py-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-800">
+                      {CATEGORY_LABELS[adj.adjustmentCategory] || adj.adjustmentCategory}
+                    </span>
+                    <span className="font-mono text-slate-500 text-[11px]">{adj.timestampUtc}</span>
+                  </div>
+                  <div className="flex items-center gap-3 font-mono text-[11px]">
+                    <span className="text-slate-500">
+                      Old Adj: {formatFinancialNumber(adj.oldAdjustmentAmount)}
+                    </span>
+                    <span className="text-slate-400">→</span>
+                    <span className="text-amber-700 font-bold">
+                      New Adj: {formatFinancialNumber(adj.newAdjustmentAmount)}
+                    </span>
+                    <span className="text-emerald-700 font-bold">
+                      (Final: {formatFinancialNumber(adj.resultingFinalTransfer)})
+                    </span>
+                  </div>
+                  <p className="text-slate-700 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    "{adj.reason}"
+                  </p>
+                  <p className="text-[10px] text-slate-600">
+                    Adjusted by: <span className="font-semibold">{adj.userName}</span> (IP: {adj.clientIp})
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
     </div>
   );
-}
+};

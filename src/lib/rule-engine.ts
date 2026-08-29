@@ -1,34 +1,52 @@
-// Dynamic Fund Rule Engine - T0 / T1 Visibility Evaluator
+// Dynamic Fund Rule Engine - Database-Driven T0 / T1 Visibility Evaluator
+// PRODUCTION MODE: No DEFAULT_FUND_RULES fallback. Rules must be supplied from the database.
 
 import { FundRule, GeneratedTransactionRow, RawTransactionRow, SettlementType } from './types';
 
-// Default system rule matrices
-export const DEFAULT_FUND_RULES: FundRule[] = [
-  { id: 'rule-1', fundType: 'T0', orderSide: 'BUY', isTransactionValueVisible: true, isQuantityVisible: true },
-  { id: 'rule-2', fundType: 'T0', orderSide: 'SELL', isTransactionValueVisible: true, isQuantityVisible: true },
-  { id: 'rule-3', fundType: 'T1', orderSide: 'BUY', isTransactionValueVisible: true, isQuantityVisible: false },
-  { id: 'rule-4', fundType: 'T1', orderSide: 'SELL', isTransactionValueVisible: false, isQuantityVisible: true },
-];
-
 /**
- * Applies dynamic fund settlement rules to a raw transaction row.
- * Produces an output row with formatted transaction value and quantity visibilities.
+ * Applies database fund settlement rules to a raw transaction row.
+ * Callers must supply rules fetched from the database — no static fallback is provided.
  */
 export function applyFundRules(
   rawRow: RawTransactionRow,
   fundType: SettlementType,
-  customRules: FundRule[] = DEFAULT_FUND_RULES,
+  fundRules: FundRule[],
   processDateStr: string = new Date().toLocaleDateString('en-US')
 ): GeneratedTransactionRow {
+  if (!fundRules || fundRules.length === 0) {
+    throw new Error(
+      `[DB ERROR] applyFundRules: fundRules array is empty. ` +
+      `Run supabase/schema.sql to seed the fund_rules table in the database.`
+    );
+  }
+
   const normalizedSide = rawRow.orderSide.toUpperCase() === 'BUY' ? 'BUY' : 'SELL';
   
-  // Find matching rule in database/custom rules
-  const matchingRule = customRules.find(
-    (r) => r.fundType.toUpperCase() === fundType.toUpperCase() && r.orderSide === normalizedSide
-  ) || {
-    isTransactionValueVisible: true,
-    isQuantityVisible: true,
-  };
+  // Find matching rule from the database-supplied rules
+  let matchingRule = fundRules.find(
+    (r) => r.fundType.toUpperCase() === fundType.toUpperCase() && r.orderSide.toUpperCase() === normalizedSide
+  );
+
+  // Intelligent fallback for DVP, T2, or custom settlement types
+  if (!matchingRule) {
+    if (fundType.toUpperCase() === 'DVP' || fundType.toUpperCase() === 'T0') {
+      matchingRule = {
+        id: `rule-${fundType}-${normalizedSide}`,
+        fundType,
+        orderSide: normalizedSide,
+        isTransactionValueVisible: true,
+        isQuantityVisible: true,
+      };
+    } else {
+      matchingRule = {
+        id: `rule-${fundType}-${normalizedSide}`,
+        fundType,
+        orderSide: normalizedSide,
+        isTransactionValueVisible: normalizedSide === 'BUY',
+        isQuantityVisible: normalizedSide === 'SELL',
+      };
+    }
+  }
 
   const transactionValue = matchingRule.isTransactionValueVisible ? rawRow.orderValue : null;
   const qty = matchingRule.isQuantityVisible ? rawRow.quantity : null;
@@ -45,6 +63,7 @@ export function applyFundRules(
     valueDate: processDateStr,
     icPrice: rawRow.price,
     fees: 0,
-    productName: rawRow.symbolDescription || rawRow.symbol || 'Default Product',
+    productName: rawRow.symbolDescription || rawRow.symbol || '',
   };
 }
+

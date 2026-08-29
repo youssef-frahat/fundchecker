@@ -38,12 +38,13 @@ export function calculateNettingSheet(
 
   // Aggregate transaction values
   for (const tx of transactions) {
-    const rawSymbol = tx.symbol;
+    const rawSymbol = (tx.symbol || '').trim();
+    const rawDesc = (tx.symbolDescription || '').trim();
     const refMatch = referenceDataList.find(
       (r) =>
         r.symbolCode.toLowerCase() === rawSymbol.toLowerCase() ||
         r.actualSymbol.toLowerCase() === rawSymbol.toLowerCase() ||
-        r.symbolName.toLowerCase() === tx.symbolDescription.toLowerCase()
+        (rawDesc && r.symbolName.toLowerCase() === rawDesc.toLowerCase())
     );
 
     const groupKey = groupBy === 'actual_symbol' 
@@ -56,10 +57,13 @@ export function calculateNettingSheet(
 
     const item = map.get(groupKey)!;
     const orderSide = tx.orderSide.toUpperCase();
+    // NET-1 REMEDIATION: Use net_settle (after commissions) not order_value (gross notional)
+    // net_settle = order_value - total_commission; this is the actual cash transferred to custodian
+    const settledValue = tx.netSettle ?? tx.orderValue ?? 0;
     if (orderSide === 'BUY') {
-      item.buy += tx.orderValue || 0;
+      item.buy += settledValue;
     } else if (orderSide === 'SELL') {
-      item.sell += tx.orderValue || 0;
+      item.sell += settledValue;
     }
   }
 

@@ -17,11 +17,14 @@ import { RawTransactionRow, UploadedFileRecord } from '@/lib/types';
 import ExcelJS from 'exceljs';
 
 interface FileUploaderProps {
-  onFileUpload: (fileRecord: UploadedFileRecord, rawRows: RawTransactionRow[]) => void;
+  onFileUpload: (fileRecord: UploadedFileRecord, rawRows: RawTransactionRow[], category: 'ORDERS' | 'ALLOCATION') => void;
   existingHashes: string[];
+  uploaderEmail?: string;
+  uploaderName?: string;
 }
 
-export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps) {
+export function FileUploader({ onFileUpload, existingHashes, uploaderEmail, uploaderName }: FileUploaderProps) {
+  const [fileCategory, setFileCategory] = useState<'ORDERS' | 'ALLOCATION'>('ORDERS');
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -41,6 +44,7 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
 
       const hash = await computeFileHash(file);
 
+      // Check client-side duplicate before parsing
       if (existingHashes.includes(hash)) {
         setDuplicateModal({ file, hash });
         setIsProcessing(false);
@@ -67,13 +71,13 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
         fileHashSha256: hash,
         fileSize: file.size,
         rowCount: parsedRows.length,
-        uploadedBy: 'user-ops-1',
-        uploadedByName: 'Ahmed Hassan (Maker)',
+        uploadedBy: uploaderEmail || '',
+        uploadedByName: uploaderName || 'Operations User',
         uploadedAt: new Date().toISOString(),
         status: 'PARSED',
       };
 
-      onFileUpload(fileRecord, parsedRows);
+      onFileUpload(fileRecord, parsedRows, fileCategory);
       setDuplicateModal(null);
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : 'Error extracting trade rows.');
@@ -157,6 +161,38 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
 
   return (
     <div className="space-y-6">
+      {/* File Purpose / Category Selector */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="text-xs">
+          <span className="font-bold text-slate-900 block">Select Operational File Type:</span>
+          <span className="text-slate-500">Choose whether this file is for trading transaction reports or cash transfer netting.</span>
+        </div>
+        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setFileCategory('ORDERS')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${
+              fileCategory === 'ORDERS'
+                ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            1. Orders File (Transactions)
+          </button>
+          <button
+            type="button"
+            onClick={() => setFileCategory('ALLOCATION')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${
+              fileCategory === 'ALLOCATION'
+                ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            2. Allocation File (Transfers)
+          </button>
+        </div>
+      </div>
+
       {/* File Upload Zone */}
       <div
         onDragOver={handleDragOver}
@@ -179,10 +215,12 @@ export function FileUploader({ onFileUpload, existingHashes }: FileUploaderProps
 
           <div>
             <h3 className="text-lg font-bold text-slate-900">
-              Upload Daily Excel Trading File
+              Upload Daily {fileCategory === 'ALLOCATION' ? 'Allocation' : 'Trading Orders'} File
             </h3>
             <p className="text-xs text-slate-600 mt-1">
-              Supports 39-column raw trading format up to <span className="text-emerald-700 font-semibold">100MB (50,000+ rows)</span>
+              {fileCategory === 'ALLOCATION'
+                ? 'Calculates cash transfers using Allocated Quantity × Price (Net = Sell - Buy).'
+                : 'Supports 39-column raw trading format generating 11-column fund reports.'}
             </p>
           </div>
 

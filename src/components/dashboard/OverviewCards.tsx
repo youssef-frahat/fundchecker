@@ -38,7 +38,13 @@ export function OverviewCards({
   completedChecklistsCount,
   totalChecklistsCount,
 }: OverviewCardsProps) {
-  const isEodComplete = completedChecklistsCount === totalChecklistsCount && exceptionsCount === 0;
+  const hasChecklists = totalChecklistsCount > 0;
+  const isEodComplete = hasChecklists && completedChecklistsCount === totalChecklistsCount && exceptionsCount === 0;
+  const statusLabel = !hasChecklists
+    ? 'UNINITIALIZED (SEED DATABASE)'
+    : isEodComplete
+    ? 'FULL COMPLIANCE (EOD COMPLETE)'
+    : 'IN PROGRESS (OPEN CHECKS)';
 
   return (
     <div className="space-y-6">
@@ -47,6 +53,8 @@ export function OverviewCards({
         className={`p-4 rounded-2xl border flex items-center justify-between shadow-sm transition-all ${
           isEodComplete
             ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+            : !hasChecklists
+            ? 'bg-slate-50 border-slate-200 text-slate-700'
             : 'bg-white border-slate-200 text-slate-900'
         }`}
       >
@@ -55,6 +63,8 @@ export function OverviewCards({
             className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-xl ${
               isEodComplete
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                : !hasChecklists
+                ? 'bg-slate-200 text-slate-600 border border-slate-300'
                 : 'bg-amber-100 text-amber-700 border border-amber-200'
             }`}
           >
@@ -64,8 +74,8 @@ export function OverviewCards({
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-base tracking-wide text-slate-900">
                 OPERATIONAL DAY STATUS:{' '}
-                <span className={isEodComplete ? 'text-emerald-700' : 'text-amber-700'}>
-                  {isEodComplete ? 'FULL COMPLIANCE (EOD COMPLETE)' : 'IN PROGRESS (OPEN CHECKS)'}
+                <span className={isEodComplete ? 'text-emerald-700' : !hasChecklists ? 'text-slate-500' : 'text-amber-700'}>
+                  {statusLabel}
                 </span>
               </h2>
             </div>
@@ -74,6 +84,7 @@ export function OverviewCards({
             </p>
           </div>
         </div>
+
 
         <div className="text-right font-mono text-xs text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
           <span>Timezone: </span>

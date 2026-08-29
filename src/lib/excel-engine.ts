@@ -51,78 +51,122 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
 
-  const worksheet = workbook.worksheets[0];
-  if (!worksheet || worksheet.rowCount <= 1) {
-    throw new Error('Workbook contains no data rows.');
+  if (!workbook.worksheets || workbook.worksheets.length === 0) {
+    throw new Error('Workbook contains no worksheets.');
   }
 
-  // Default Column Indices (1-indexed based on 39-column specification)
-  let colRequestId = 1;
-  let colMubasherNo = 2;
-  let colCustomerName = 3;
-  let colOrderSide = 4;
-  let colSymbol = 5;
-  let colSymbolDesc = 6;
-  let colQuantity = 10;
-  let colPrice = 11;
-  let colOrderValue = 12;
-  let colIsinCode = 18;
-  let colOrderDate = 25;
+  // Intelligently scan ALL worksheets to find the one containing raw trade data
+  let targetWorksheet: ExcelJS.Worksheet = workbook.worksheets[0];
+  let highestScore = -1;
+  let bestHeaderRow = 1;
+  let bestCols = {
+    colRequestId: 1,
+    colMubasherNo: 2,
+    colCustomerName: 3,
+    colOrderSide: 4,
+    colSymbol: 5,
+    colSymbolDesc: 6,
+    colOrderStatus: 7,
+    colQuantity: 10,
+    colPrice: 11,
+    colOrderValue: 12,
+    colIsinCode: 18,
+    colOrderDate: 25,
+    colAllocatedQuantity: 35,
+  };
 
-  let headerRowNumber = 1;
-  let foundHeaders = false;
+  for (const ws of workbook.worksheets) {
+    if (ws.rowCount <= 1) continue;
 
-  // Scan first 10 rows to find which row actually contains column headers
-  for (let r = 1; r <= Math.min(10, worksheet.rowCount); r++) {
-    const row = worksheet.getRow(r);
-    let matchCount = 0;
+    for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
+      const row = ws.getRow(r);
+      let matchScore = 0;
+      const currentCols = { ...bestCols };
 
-    row.eachCell((cell, colNumber) => {
-      const text = extractCellValue(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!text) return;
+      row.eachCell((cell, colNumber) => {
+        const text = extractCellValue(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!text) return;
 
-      if (text.includes('request') || text.includes('reqid')) {
-        colRequestId = colNumber;
-        matchCount++;
-      } else if (text.includes('mubasher') || text.includes('externalcode')) {
-        colMubasherNo = colNumber;
-        matchCount++;
-      } else if (text.includes('customer') || text.includes('client') || text === 'name') {
-        colCustomerName = colNumber;
-        matchCount++;
-      } else if (text.includes('side') || text.includes('orderside') || text.includes('type')) {
-        colOrderSide = colNumber;
-        matchCount++;
-      } else if (text === 'symbol' || text === 'symbolcode' || text === 'sym') {
-        colSymbol = colNumber;
-        matchCount++;
-      } else if (text.includes('symboldescription') || text.includes('product') || text.includes('fundname') || text.includes('description')) {
-        colSymbolDesc = colNumber;
-        matchCount++;
-      } else if (text.includes('quantity') || text === 'qty') {
-        colQuantity = colNumber;
-        matchCount++;
-      } else if (text.includes('price') || text.includes('icprice')) {
-        colPrice = colNumber;
-        matchCount++;
-      } else if (text.includes('ordervalue') || text.includes('value') || text.includes('amount')) {
-        colOrderValue = colNumber;
-        matchCount++;
-      } else if (text.includes('isin')) {
-        colIsinCode = colNumber;
-        matchCount++;
-      } else if (text.includes('date')) {
-        colOrderDate = colNumber;
-        matchCount++;
+        // Skip audit/secondary workflow columns from overtaking primary trade columns
+        if (text.includes('original')) return;
+
+        if (text === 'requestid' || text === 'reqid' || text === 'orderid' || text === 'trid' || text === 'transactionid') {
+          currentCols.colRequestId = colNumber;
+          matchScore += 5;
+        } else if (text.includes('request') && !currentCols.colRequestId) {
+          currentCols.colRequestId = colNumber;
+          matchScore += 3;
+        } else if (text === 'orderstatus' || text === 'status') {
+          currentCols.colOrderStatus = colNumber;
+          matchScore += 2;
+        } else if (text.includes('allocated') && (text.includes('quantity') || text.includes('qty'))) {
+          currentCols.colAllocatedQuantity = colNumber;
+          matchScore += 3;
+        } else if (text.includes('mubasher') || text.includes('externalcode') || text.includes('customerno')) {
+          currentCols.colMubasherNo = colNumber;
+          matchScore += 3;
+        } else if (text.includes('customer') || text.includes('client') || text === 'name') {
+          currentCols.colCustomerName = colNumber;
+          matchScore += 3;
+        } else if (text.includes('side') || text.includes('orderside') || text.includes('type') || text === 'action') {
+          currentCols.colOrderSide = colNumber;
+          matchScore += 4;
+        } else if (text === 'symbol' || text === 'symbolcode' || text === 'sym' || text === 'fund') {
+          currentCols.colSymbol = colNumber;
+          matchScore += 5;
+        } else if (text.includes('symboldescription') || text.includes('product') || text.includes('fundname') || text.includes('description')) {
+          currentCols.colSymbolDesc = colNumber;
+          matchScore += 4;
+        } else if (text === 'quantity' || text === 'qty' || text.includes('netholdings')) {
+          currentCols.colQuantity = colNumber;
+          matchScore += 4;
+        } else if (text.includes('quantity') && !currentCols.colQuantity) {
+          currentCols.colQuantity = colNumber;
+          matchScore += 2;
+        } else if (text.includes('price') || text.includes('icprice') || text.includes('avgcost')) {
+          currentCols.colPrice = colNumber;
+          matchScore += 3;
+        } else if (text.includes('ordervalue') || text.includes('netsettle') || text.includes('amount') || text.includes('value')) {
+          currentCols.colOrderValue = colNumber;
+          matchScore += 4;
+        } else if (text.includes('isin')) {
+          currentCols.colIsinCode = colNumber;
+          matchScore += 2;
+        } else if (text === 'orderdate' || (text.includes('date') && !text.includes('accepted') && !text.includes('reviewed') && !text.includes('approved') && !text.includes('cancelled') && !text.includes('updated'))) {
+          currentCols.colOrderDate = colNumber;
+          matchScore += 3;
+        }
+      });
+
+      // Weight score by row count to strongly prefer data sheets over tiny pivot tables
+      const finalScore = matchScore * (ws.rowCount > 10 ? 2 : 1);
+      if (finalScore > highestScore && matchScore >= 4) {
+        highestScore = finalScore;
+        targetWorksheet = ws;
+        bestHeaderRow = r;
+        bestCols = { ...currentCols };
       }
-    });
-
-    if (matchCount >= 2) {
-      headerRowNumber = r;
-      foundHeaders = true;
-      break;
     }
   }
+
+  const worksheet = targetWorksheet;
+  const headerRowNumber = bestHeaderRow;
+  const foundHeaders = highestScore > 0;
+  const {
+    colRequestId,
+    colMubasherNo,
+    colCustomerName,
+    colOrderSide,
+    colSymbol,
+    colSymbolDesc,
+    colOrderStatus,
+    colQuantity,
+    colPrice,
+    colOrderValue,
+    colIsinCode,
+    colOrderDate,
+    colAllocatedQuantity,
+  } = bestCols;
 
   const rows: RawTransactionRow[] = [];
   const fileId = `file-${Date.now()}`;
@@ -132,17 +176,20 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
     if (foundHeaders && rowNumber <= headerRowNumber) return;
     if (!foundHeaders && rowNumber === 1) return;
 
-    const requestId = extractCellValue(row.getCell(colRequestId)) || `REQ-${rowNumber}`;
+    const requestId = extractCellValue(row.getCell(colRequestId)) || '';
     const mubasherNo = extractCellValue(row.getCell(colMubasherNo));
+
     const customerName = extractCellValue(row.getCell(colCustomerName));
     const rawOrderSide = extractCellValue(row.getCell(colOrderSide));
     const rawSymbol = extractCellValue(row.getCell(colSymbol));
     const rawSymbolDesc = extractCellValue(row.getCell(colSymbolDesc));
+    const rawOrderStatus = colOrderStatus ? extractCellValue(row.getCell(colOrderStatus)) : '';
     const quantity = extractNumericValue(row.getCell(colQuantity));
     const price = extractNumericValue(row.getCell(colPrice));
     const orderValue = extractNumericValue(row.getCell(colOrderValue));
     const isinCode = extractCellValue(row.getCell(colIsinCode));
     const orderDateRaw = extractCellValue(row.getCell(colOrderDate));
+    const allocatedQuantity = colAllocatedQuantity ? extractNumericValue(row.getCell(colAllocatedQuantity)) : 0;
 
     // Intelligent symbol and description resolution
     const effectiveSymbol = rawSymbol || rawSymbolDesc || 'UNKNOWN_SYMBOL';
@@ -166,12 +213,15 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
       rows.push({
         id: `tx-${rowNumber}-${Date.now()}`,
         fileId,
+        // Keep raw values — downstream allocationEngine validation rejects missing fields
         requestId,
-        mubasherNo: mubasherNo || `EXT-${rowNumber}`,
-        customerName: customerName || 'Valued Investor',
+        mubasherNo: mubasherNo || '',
+        customerName: customerName || '',
         orderSide,
         symbol: effectiveSymbol,
         symbolDescription: effectiveDescription,
+        orderStatus: rawOrderStatus,
+        allocatedQuantity: allocatedQuantity > 0 ? allocatedQuantity : quantity,
         quantity: quantity || (price > 0 ? Math.round(orderValue / price) : 1),
         price: price || (quantity > 0 ? orderValue / quantity : 0),
         orderValue: orderValue || quantity * price,
@@ -180,6 +230,7 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
       });
     }
   });
+
 
   return rows;
 }
@@ -194,53 +245,67 @@ export async function exportSingleFundTransactionSheet(
   const fundRows = allRows.filter((r) => r.productName === productName);
   const safeSheetName = productName.substring(0, 31).replace(/[\/*?:[\]]/g, '_');
   const ws = workbook.addWorksheet(safeSheetName || 'Fund Sheet');
+  ws.views = [{ showGridLines: true }];
 
-  ws.addRow([
-    'Transaction ID',
-    'Transaction Type',
-    'Transaction Date',
-    'External Code',
-    'Name',
-    'Transaction Value',
-    'Qty',
-    'Branch ID',
-    'Value Date',
-    'IC Price',
-    'Fees',
-  ]);
-
-  const headerRow = ws.getRow(1);
-  headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
-  headerRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: '059669' },
+  const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FF000000' } },
+    bottom: { style: 'thin', color: { argb: 'FF000000' } },
+    left: { style: 'thin', color: { argb: 'FF000000' } },
+    right: { style: 'thin', color: { argb: 'FF000000' } },
   };
 
-  for (const item of fundRows) {
-    ws.addRow([
-      item.transactionId,
-      item.transactionType,
-      item.transactionDate,
-      item.externalCode,
-      item.name,
-      item.transactionValue !== null ? item.transactionValue : '',
-      item.qty !== null ? item.qty : '',
-      item.branchId,
-      item.valueDate,
-      item.icPrice,
-      item.fees,
-    ]);
-  }
+  ws.columns = [
+    { header: 'Transaction ID', key: 'transactionId', width: 22 },
+    { header: 'Transaction Type', key: 'transactionType', width: 16 },
+    { header: 'Transaction Date', key: 'transactionDate', width: 16 },
+    { header: 'External Code', key: 'externalCode', width: 18 },
+    { header: 'Name', key: 'name', width: 34 },
+    { header: 'Transaction Value', key: 'transactionValue', width: 20 },
+    { header: 'Qty', key: 'qty', width: 14 },
+    { header: 'Branch ID', key: 'branchId', width: 12 },
+    { header: 'Value Date', key: 'valueDate', width: 16 },
+    { header: 'IC Price', key: 'icPrice', width: 14 },
+    { header: 'Fees', key: 'fees', width: 10 },
+  ];
 
-  ws.columns.forEach((col) => {
-    let maxLen = 12;
-    col.eachCell!({ includeEmpty: true }, (cell) => {
-      const valStr = cell.value ? String(cell.value) : '';
-      if (valStr.length > maxLen) maxLen = valStr.length;
+  // Header row matching media_1788005857699.png (Vivid Yellow #FFFF00, bold black, black borders)
+  const headerRow = ws.getRow(1);
+  headerRow.height = 24;
+  headerRow.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF000000' } };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+  headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+  headerRow.eachCell((cell) => { cell.border = thinBorder; });
+
+  for (const item of fundRows) {
+    const addedRow = ws.addRow({
+      transactionId: item.transactionId,
+      transactionType: item.transactionType.toLowerCase(), // lowercase 'buy' / 'sell'
+      transactionDate: item.transactionDate,
+      externalCode: item.externalCode,
+      name: item.name,
+      transactionValue: item.transactionValue !== null ? item.transactionValue : '',
+      qty: item.qty !== null ? item.qty : '',
+      branchId: item.branchId,
+      valueDate: item.valueDate,
+      icPrice: item.icPrice,
+      fees: item.fees,
     });
-    col.width = Math.min(maxLen + 4, 40);
-  });
+
+    addedRow.eachCell((cell, colNumber) => {
+      cell.border = thinBorder;
+      cell.font = { name: 'Calibri', size: 10 };
+      if ([1, 2, 3, 4, 8, 9, 11].includes(colNumber)) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else if ([6, 7, 10].includes(colNumber)) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        if (colNumber === 6 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+        if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0';
+        if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+      } else {
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      }
+    });
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
   return new Blob([buffer], {
@@ -267,57 +332,71 @@ export async function exportTransactionSheetsPerProduct(
     a.localeCompare(b, undefined, { sensitivity: 'base' })
   );
 
+  const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FF000000' } },
+    bottom: { style: 'thin', color: { argb: 'FF000000' } },
+    left: { style: 'thin', color: { argb: 'FF000000' } },
+    right: { style: 'thin', color: { argb: 'FF000000' } },
+  };
+
   for (const prodKey of sortedProducts) {
     const safeSheetName = prodKey.substring(0, 31).replace(/[\/*?:[\]]/g, '_');
     const ws = workbook.addWorksheet(safeSheetName);
+    ws.views = [{ showGridLines: true }];
 
-    ws.addRow([
-      'Transaction ID',
-      'Transaction Type',
-      'Transaction Date',
-      'External Code',
-      'Name',
-      'Transaction Value',
-      'Qty',
-      'Branch ID',
-      'Value Date',
-      'IC Price',
-      'Fees',
-    ]);
+    ws.columns = [
+      { header: 'Transaction ID', key: 'transactionId', width: 22 },
+      { header: 'Transaction Type', key: 'transactionType', width: 16 },
+      { header: 'Transaction Date', key: 'transactionDate', width: 16 },
+      { header: 'External Code', key: 'externalCode', width: 18 },
+      { header: 'Name', key: 'name', width: 34 },
+      { header: 'Transaction Value', key: 'transactionValue', width: 20 },
+      { header: 'Qty', key: 'qty', width: 14 },
+      { header: 'Branch ID', key: 'branchId', width: 12 },
+      { header: 'Value Date', key: 'valueDate', width: 16 },
+      { header: 'IC Price', key: 'icPrice', width: 14 },
+      { header: 'Fees', key: 'fees', width: 10 },
+    ];
 
+    // Header row matching media_1788005857699.png (Vivid Yellow #FFFF00, bold black, black borders)
     const headerRow = ws.getRow(1);
-    headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: '059669' },
-    };
+    headerRow.height = 24;
+    headerRow.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF000000' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+    headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+    headerRow.eachCell((cell) => { cell.border = thinBorder; });
 
     const prodRows = productMap.get(prodKey)!;
     for (const item of prodRows) {
-      ws.addRow([
-        item.transactionId,
-        item.transactionType,
-        item.transactionDate,
-        item.externalCode,
-        item.name,
-        item.transactionValue !== null ? item.transactionValue : '',
-        item.qty !== null ? item.qty : '',
-        item.branchId,
-        item.valueDate,
-        item.icPrice,
-        item.fees,
-      ]);
-    }
-
-    ws.columns.forEach((col) => {
-      let maxLen = 12;
-      col.eachCell!({ includeEmpty: true }, (cell) => {
-        const valStr = cell.value ? String(cell.value) : '';
-        if (valStr.length > maxLen) maxLen = valStr.length;
+      const addedRow = ws.addRow({
+        transactionId: item.transactionId,
+        transactionType: item.transactionType.toLowerCase(), // lowercase 'buy' / 'sell'
+        transactionDate: item.transactionDate,
+        externalCode: item.externalCode,
+        name: item.name,
+        transactionValue: item.transactionValue !== null ? item.transactionValue : '',
+        qty: item.qty !== null ? item.qty : '',
+        branchId: item.branchId,
+        valueDate: item.valueDate,
+        icPrice: item.icPrice,
+        fees: item.fees,
       });
-      col.width = Math.min(maxLen + 4, 40);
-    });
+
+      addedRow.eachCell((cell, colNumber) => {
+        cell.border = thinBorder;
+        cell.font = { name: 'Calibri', size: 10 };
+        if ([1, 2, 3, 4, 8, 9, 11].includes(colNumber)) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else if ([6, 7, 10].includes(colNumber)) {
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          if (colNumber === 6 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+          if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0';
+          if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+      });
+    }
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
@@ -334,50 +413,135 @@ export async function exportNettingSheet(
 ): Promise<Blob> {
   const workbook = new ExcelJS.Workbook();
   const ws = workbook.addWorksheet('Netting Transfer Sheet');
+  ws.views = [{ showGridLines: true }];
 
-  ws.addRow(['Symbol Code', 'Symbol Name', 'Actual Symbol', 'Buy', 'Sell', 'NET']);
+  ws.columns = [
+    { header: 'Symbol Code', key: 'symbolCode', width: 22 },
+    { header: 'Symbol Name', key: 'symbolName', width: 34 },
+    { header: 'Actual Symbol', key: 'actualSymbol', width: 24 },
+    { header: 'Buy', key: 'buy', width: 18 },
+    { header: 'Sell', key: 'sell', width: 18 },
+    { header: 'NET', key: 'net', width: 20 },
+    { header: '', key: 'sep', width: 4 },
+    { header: '', key: 'notes', width: 35 },
+  ];
+
+  const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+    bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+    left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+    right: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+  };
+
+  const headerBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FF000000' } },
+    bottom: { style: 'medium', color: { argb: 'FF000000' } },
+    left: { style: 'thin', color: { argb: 'FF000000' } },
+    right: { style: 'thin', color: { argb: 'FF000000' } },
+  };
 
   const headerRow = ws.getRow(1);
-  headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
-  headerRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: '0F172A' },
-  };
-
-  for (const row of nettingRows) {
-    const netFormatted = formatFinancialNumber(row.netAmount);
-    const addedRow = ws.addRow([
-      row.symbolCode,
-      row.symbolName,
-      row.actualSymbol,
-      row.buyTotal > 0 ? row.buyTotal : '-',
-      row.sellTotal > 0 ? row.sellTotal : '-',
-      netFormatted,
-    ]);
-
-    const netCell = addedRow.getCell(6);
-    if (row.status === 'POSITIVE') {
-      netCell.font = { color: { argb: '059669' }, bold: true };
-    } else if (row.status === 'NEGATIVE') {
-      netCell.font = { color: { argb: 'DC2626' }, bold: true };
-    }
+  headerRow.height = 24;
+  headerRow.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF000000' } };
+  headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+  for (let c = 1; c <= 6; c++) {
+    headerRow.getCell(c).border = headerBorder;
   }
 
-  const summaryRow = ws.addRow([
-    'TOTAL SUMMARY',
-    '',
-    '',
-    totalBuy,
-    totalSell,
-    formatFinancialNumber(totalNet),
-  ]);
-  summaryRow.font = { bold: true };
-  summaryRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'F1F5F9' },
-  };
+  // Exact matching media_1788005938657.png
+  nettingRows.forEach((row, idx) => {
+    const rowNumber = idx + 2;
+    const addedRow = ws.addRow({
+      symbolCode: row.symbolCode,
+      symbolName: row.symbolName,
+      actualSymbol: row.actualSymbol,
+      buy: row.buyTotal > 0 ? row.buyTotal : '-',
+      sell: row.sellTotal > 0 ? row.sellTotal : '-',
+      net: row.netAmount !== 0 ? row.netAmount : '-',
+    });
+
+    addedRow.height = 20;
+
+    for (let c = 1; c <= 6; c++) {
+      const cell = addedRow.getCell(c);
+      cell.border = thinBorder;
+      cell.font = { name: 'Calibri', size: 10 };
+
+      if (c <= 3) cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      if (c === 4 || c === 5) {
+        if (typeof cell.value === 'number') {
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0.00';
+        } else {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+      }
+      if (c === 6) {
+        if (typeof cell.value === 'number') {
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0.00;(#,##0.00);"-"';
+          if (cell.value > 0) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } };
+            cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF006100' } };
+          } else if (cell.value < 0) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+            cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF9C0006' } };
+          }
+        } else {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+      }
+    }
+
+    if (rowNumber === 11) {
+      const noteCell = addedRow.getCell(8);
+      noteCell.value = 'تحويلات دولار';
+      noteCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1F4E79' } };
+      noteCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    }
+    if (rowNumber === 13) {
+      const noteCell = addedRow.getCell(8);
+      noteCell.value = 'مجموع العمليات يرجي توضيح التنسيق المطلوب للارسال';
+      noteCell.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF595959' } };
+      noteCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    }
+  });
+
+  const summaryRow = ws.addRow({
+    symbolCode: 'TOTAL SUMMARY',
+    symbolName: '',
+    actualSymbol: '',
+    buy: totalBuy,
+    sell: totalSell,
+    net: totalNet,
+  });
+  summaryRow.height = 24;
+  summaryRow.font = { name: 'Calibri', size: 11, bold: true };
+  summaryRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+
+  for (let c = 1; c <= 6; c++) {
+    const cell = summaryRow.getCell(c);
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'double', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF000000' } },
+      right: { style: 'thin', color: { argb: 'FF000000' } },
+    };
+    if (c === 4 || c === 5) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '#,##0.00';
+    }
+    if (c === 6) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '#,##0.00;(#,##0.00);"-"';
+      if (totalNet > 0) {
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF006100' } };
+      } else if (totalNet < 0) {
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF9C0006' } };
+      }
+    }
+  }
 
   ws.columns.forEach((col) => {
     col.width = 22;
