@@ -643,7 +643,7 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                     </span>
                   </div>
                   <p className="text-slate-700 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    "{adj.reason}"
+                    &quot;{adj.reason}&quot;
                   </p>
                   <p className="text-[10px] text-slate-600">
                     Adjusted by: <span className="font-semibold">{adj.userName}</span> (IP: {adj.clientIp})

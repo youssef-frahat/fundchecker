@@ -72,7 +72,7 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
             .in('id', staleCompletedIds);
           if (error) throw error;
           console.log(`Auto-reset ${staleCompletedIds.length} checklist items for new daily operational shift.`);
-        } catch (err: any) {
+        } catch (err) {
           console.warn('Daily shift auto-reset notice:', err);
         }
       })();

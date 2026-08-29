@@ -456,7 +456,7 @@ export function ReferenceDataAdmin({
                   <label className="block text-slate-700 font-semibold mb-1">Lifecycle Status</label>
                   <select
                     value={editingFund.status || 'ACTIVE'}
-                    onChange={(e) => setEditingFund({ ...editingFund, status: e.target.value as any })}
+                    onChange={(e) => setEditingFund({ ...editingFund, status: e.target.value as ReferenceData['status'] })}
                     className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-semibold"
                   >
                     <option value="ACTIVE">ACTIVE (Operational)</option>

@@ -4,7 +4,7 @@
 'use server';
 
 import { headers } from 'next/headers';
-import { AdjustmentCategory, RawTransactionRow, TransferSheetBatch } from '@/lib/types';
+import { AdjustmentCategory, RawTransactionRow, TransferSheetBatch, TransferSheetLine } from '@/lib/types';
 import { getAuthenticatedServerUser } from '@/lib/supabase-server';
 import { fetchAllReferenceData } from '@/lib/repositories/referenceRepository';
 import { processAllocationFile } from '@/lib/services/allocationEngine';
@@ -116,7 +116,7 @@ export async function uploadAllocationFileAction(
       batch: persistedBatch || {
         ...calculation.batch,
         id: batchId,
-        lines: calculation.lines as any,
+        lines: calculation.lines as unknown as TransferSheetLine[],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },

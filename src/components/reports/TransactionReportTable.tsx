@@ -117,7 +117,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
               className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-3 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-sm"
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              Download "{activeTab.substring(0, 16)}..." Sheet
+              Download &quot;{activeTab.substring(0, 16)}...&quot; Sheet
             </button>
           )}
 
@@ -137,17 +137,17 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
           {/* Category Filter Pills */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[11px] font-bold text-slate-500 mr-1">Category:</span>
-            {[
+            {([
               { key: 'ALL', label: `All Funds (${products.length})` },
               { key: 'T0_CASH', label: 'T0 Money Market' },
               { key: 'T1_EQUITY', label: 'T1 Equity' },
               { key: 'GOLD', label: 'Gold & Commodities' },
               { key: 'USD', label: 'USD Funds' },
-            ].map((cat) => (
+            ] as const).map((cat) => (
               <button
                 key={cat.key}
                 onClick={() => {
-                  setSelectedCategory(cat.key as any);
+                  setSelectedCategory(cat.key);
                 }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
                   selectedCategory === cat.key

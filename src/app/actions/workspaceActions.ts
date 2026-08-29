@@ -85,7 +85,7 @@ export async function reopenChecklistAction(
   await reopenChecklistItemInDb(id, userEmail, userName, reason);
 }
 
-export async function saveAuditLogAction(log: any) {
+export async function saveAuditLogAction(log: import('@/lib/types').AuditLog) {
   const { insertAuditLog } = await import('@/lib/repositories/auditRepository');
   await insertAuditLog(log);
 }

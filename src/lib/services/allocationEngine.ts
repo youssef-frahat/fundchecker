@@ -147,10 +147,9 @@ export function processAllocationFile(
       continue;
     }
 
-    // 5. Allocated Quantity > 0
     const allocQty =
-      (row as any).allocatedQuantity !== undefined && (row as any).allocatedQuantity > 0
-        ? Number((row as any).allocatedQuantity)
+      row.allocatedQuantity !== undefined && row.allocatedQuantity > 0
+        ? Number(row.allocatedQuantity)
         : Number(row.quantity) || 0;
 
     if (allocQty <= 0) {

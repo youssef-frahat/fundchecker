@@ -3,7 +3,7 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Bell,
   Clock,
@@ -27,15 +27,18 @@ export function ScheduleReminderSnackbar({ referenceDataList }: ScheduleReminder
   const [isDismissed, setIsDismissed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const effectiveDate = simulatedDate || new Date();
-  const reminders: ScheduleReminderItem[] = getScheduleRemindersForDate(referenceDataList, effectiveDate);
+  const effectiveDate = useMemo(() => simulatedDate || new Date(), [simulatedDate]);
+  const reminders: ScheduleReminderItem[] = useMemo(() => {
+    return getScheduleRemindersForDate(referenceDataList, effectiveDate);
+  }, [referenceDataList, effectiveDate]);
 
   // Auto-expand if high-urgency reminders exist on mount
   useEffect(() => {
     if (reminders.some((r) => r.urgency === 'HIGH')) {
-      setIsExpanded(true);
+      const timer = setTimeout(() => setIsExpanded(true), 0);
+      return () => clearTimeout(timer);
     }
-  }, [reminders.length, simulatedDate]);
+  }, [reminders]);
 
   if (isDismissed || reminders.length === 0) {
     return (

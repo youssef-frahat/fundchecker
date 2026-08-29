@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "scripts/**",
+    "validate_pipeline.ts",
+    "find_minus_one.ts",
   ]),
 ]);
 

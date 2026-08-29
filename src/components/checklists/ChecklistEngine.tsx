@@ -136,7 +136,7 @@ export function ChecklistEngine({
                         <span className="font-bold text-amber-800">REOPENED BY ADMIN:</span> {item.reopenedByName} at{' '}
                         {new Date(item.reopenedAt!).toLocaleString('en-GB', { timeZone: 'Africa/Cairo' })}
                       </p>
-                      <p className="text-slate-600 mt-0.5">Reason: "{item.reopenReason}"</p>
+                       <p className="text-slate-600 mt-0.5">Reason: &quot;{item.reopenReason}&quot;</p>
                     </div>
                   )}
                 </div>
@@ -173,7 +173,7 @@ export function ChecklistEngine({
             </div>
 
             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800">
-              Task: "{reopenModal.title}"
+              Task: &quot;{reopenModal.title}&quot;
             </div>
 
             <textarea

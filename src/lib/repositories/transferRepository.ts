@@ -113,7 +113,22 @@ export async function fetchLatestTransferBatch(): Promise<TransferSheetBatch | n
       }
     }
 
-    const mappedLines: TransferSheetLine[] = (lines || []).map((l: any) => {
+interface DbTransferLine {
+  id: unknown;
+  batch_id: unknown;
+  symbol_code: unknown;
+  symbol_name: unknown;
+  actual_symbol?: unknown;
+  system_buy_amount?: unknown;
+  system_sell_amount?: unknown;
+  adjustment_amount?: unknown;
+  adjustment_category?: unknown;
+  adjustment_reason?: unknown;
+  is_manually_adjusted?: unknown;
+}
+
+    const mappedLines: TransferSheetLine[] = (lines || []).map((item) => {
+      const l = item as unknown as DbTransferLine;
       const sysBuy = Number(l.system_buy_amount) || 0;
       const sysSell = Number(l.system_sell_amount) || 0;
       const sysNet = sysSell - sysBuy;
@@ -232,7 +247,7 @@ export async function updateBatchStatusInDb(
   rejectionReason?: string
 ): Promise<boolean> {
   const supabase = await getDbClient();
-  const payload: Record<string, any> = { status, updated_at: new Date().toISOString() };
+  const payload: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
 
   if (checkerId) {
     payload.checker_id = checkerId;

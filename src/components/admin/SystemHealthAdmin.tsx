@@ -62,9 +62,14 @@ export function SystemHealthAdmin() {
   }, []);
 
   useEffect(() => {
-    pingHealth();
+    const timer = setTimeout(() => {
+      pingHealth();
+    }, 0);
     const interval = setInterval(pingHealth, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [pingHealth]);
 
   const statusColor =

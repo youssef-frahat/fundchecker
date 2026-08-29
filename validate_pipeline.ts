@@ -1,8 +1,40 @@
 import fs from 'fs';
 import ExcelJS from 'exceljs';
 import { parseTradingExcel, exportSingleFundTransactionSheet, exportTransactionSheetsPerProduct } from './src/lib/excel-engine';
-import { applyFundRules, DEFAULT_FUND_RULES } from './src/lib/rule-engine';
-import { GeneratedTransactionRow, RawTransactionRow } from './src/lib/types';
+import { applyFundRules } from './src/lib/rule-engine';
+import { FundRule, GeneratedTransactionRow, RawTransactionRow } from './src/lib/types';
+
+// Mock fund rules matching the database seeds for validation testing
+const DEFAULT_FUND_RULES: FundRule[] = [
+  {
+    id: 'rule-t0-buy',
+    fundType: 'T0',
+    orderSide: 'BUY',
+    isTransactionValueVisible: true,
+    isQuantityVisible: true,
+  },
+  {
+    id: 'rule-t0-sell',
+    fundType: 'T0',
+    orderSide: 'SELL',
+    isTransactionValueVisible: true,
+    isQuantityVisible: true,
+  },
+  {
+    id: 'rule-t1-buy',
+    fundType: 'T1',
+    orderSide: 'BUY',
+    isTransactionValueVisible: true,
+    isQuantityVisible: false,
+  },
+  {
+    id: 'rule-t1-sell',
+    fundType: 'T1',
+    orderSide: 'SELL',
+    isTransactionValueVisible: false,
+    isQuantityVisible: true,
+  },
+];
 
 async function runValidation() {
   console.log('====================================================');
@@ -36,7 +68,7 @@ async function runValidation() {
   console.log(`\nInspecting generated sheet "${ws.name}" (${ws.rowCount} rows):`);
   let minusOneCount = 0;
   for (let r = 1; r <= ws.rowCount; r++) {
-    const rowVals = ws.getRow(r).values as any[];
+    const rowVals = ws.getRow(r).values as unknown[];
     const txId = String(rowVals[1] || '');
     const clientName = String(rowVals[5] || '');
     const txVal = rowVals[6];
