@@ -57,23 +57,25 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
 
     // Asynchronously perform automated shift reset in PostgreSQL for stale items
     if (staleCompletedIds.length > 0) {
-      supabase
-        .from('checklists')
-        .update({
-          is_completed: false,
-          completed_at: null,
-          completed_by_name: null,
-          reopened_at: null,
-          reopened_by_name: null,
-          reopen_reason: null,
-        })
-        .in('id', staleCompletedIds)
-        .then(() => {
+      (async () => {
+        try {
+          const { error } = await supabase
+            .from('checklists')
+            .update({
+              is_completed: false,
+              completed_at: null,
+              completed_by_name: null,
+              reopened_at: null,
+              reopened_by_name: null,
+              reopen_reason: null,
+            })
+            .in('id', staleCompletedIds);
+          if (error) throw error;
           console.log(`Auto-reset ${staleCompletedIds.length} checklist items for new daily operational shift.`);
-        })
-        .catch((err) => {
+        } catch (err: any) {
           console.warn('Daily shift auto-reset notice:', err);
-        });
+        }
+      })();
     }
 
     return mapped;
