@@ -274,10 +274,6 @@ export async function approveChecklistItemInDb(
       approved_by_name: approverName,
       approved_at: now,
       status: 'ACTIVE',
-      reopened_by: resolvedUuid,
-      reopened_by_name: `APPROVED_BY: ${approverName}`,
-      reopened_at: now,
-      reopen_reason: 'APPROVED',
     };
 
     if (UUID_REGEX.test(id)) {

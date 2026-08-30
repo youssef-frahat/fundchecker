@@ -73,12 +73,12 @@ export async function updateChecklistStatusAction(
   _userId?: string
 ) {
   const caller = await getAuthenticatedServerUser();
-  const effectiveEmail = caller?.email || _userEmail || 'unknown@system.local';
-  const effectiveName = caller?.fullName || _userName || 'Operator';
-  const effectiveId = caller?.id || _userId;
+  if (!caller) {
+    throw new Error('401 Unauthorized: Authentication required to modify checklist status.');
+  }
 
   const { updateChecklistStatusInDb } = await import('@/lib/repositories/checklistRepository');
-  await updateChecklistStatusInDb(id, isCompleted, effectiveEmail, effectiveName, effectiveId);
+  await updateChecklistStatusInDb(id, isCompleted, caller.email, caller.fullName, caller.id);
 }
 
 export async function reopenChecklistAction(
@@ -89,16 +89,15 @@ export async function reopenChecklistAction(
   _userId?: string
 ) {
   const caller = await getAuthenticatedServerUser();
-  if (caller && caller.role !== 'SUPER_ADMIN') {
+  if (!caller) {
+    throw new Error('401 Unauthorized: Authentication required.');
+  }
+  if (caller.role !== 'SUPER_ADMIN') {
     throw new Error('403 Forbidden: Only Super Administrators can reopen regulatory checklist items.');
   }
 
-  const effectiveEmail = caller?.email || _userEmail || 'admin@system.local';
-  const effectiveName = caller?.fullName || _userName || 'Super Admin';
-  const effectiveId = caller?.id || _userId;
-
   const { reopenChecklistItemInDb } = await import('@/lib/repositories/checklistRepository');
-  await reopenChecklistItemInDb(id, effectiveEmail, effectiveName, reason, effectiveId);
+  await reopenChecklistItemInDb(id, caller.email, caller.fullName, reason, caller.id);
 }
 
 export async function approveChecklistAction(
@@ -108,16 +107,15 @@ export async function approveChecklistAction(
   _userId?: string
 ) {
   const caller = await getAuthenticatedServerUser();
-  if (caller && caller.role !== 'SUPER_ADMIN') {
+  if (!caller) {
+    throw new Error('401 Unauthorized: Authentication required.');
+  }
+  if (caller.role !== 'SUPER_ADMIN') {
     throw new Error('403 Forbidden: Only Super Administrators can grant official operational sign-off.');
   }
 
-  const effectiveEmail = caller?.email || _userEmail || 'admin@system.local';
-  const effectiveName = caller?.fullName || _userName || 'Super Admin';
-  const effectiveId = caller?.id || _userId;
-
   const { approveChecklistItemInDb } = await import('@/lib/repositories/checklistRepository');
-  await approveChecklistItemInDb(id, effectiveEmail, effectiveName, effectiveId);
+  await approveChecklistItemInDb(id, caller.email, caller.fullName, caller.id);
 }
 
 export async function resolveLateChecklistAction(
@@ -129,7 +127,10 @@ export async function resolveLateChecklistAction(
   _userId?: string
 ) {
   const caller = await getAuthenticatedServerUser();
-  if (caller && caller.role !== 'SUPER_ADMIN') {
+  if (!caller) {
+    throw new Error('401 Unauthorized: Authentication required.');
+  }
+  if (caller.role !== 'SUPER_ADMIN') {
     throw new Error('403 Forbidden: Only Super Administrators can resolve late deadline breaches.');
   }
 
@@ -137,17 +138,16 @@ export async function resolveLateChecklistAction(
     throw new Error('400 Bad Request: Mandatory audit justification reason is required for late checklist resolution.');
   }
 
-  const effectiveEmail = caller?.email || _userEmail || 'admin@system.local';
-  const effectiveName = caller?.fullName || _userName || 'Super Admin';
-  const effectiveId = caller?.id || _userId;
-
   const { resolveLateChecklistItemInDb } = await import('@/lib/repositories/checklistRepository');
-  await resolveLateChecklistItemInDb(id, resolution, reason, effectiveEmail, effectiveName, effectiveId);
+  await resolveLateChecklistItemInDb(id, resolution, reason, caller.email, caller.fullName, caller.id);
 }
 
 export async function resetDailyChecklistsAction() {
   const caller = await getAuthenticatedServerUser();
-  if (caller && caller.role !== 'SUPER_ADMIN') {
+  if (!caller) {
+    throw new Error('401 Unauthorized: Authentication required.');
+  }
+  if (caller.role !== 'SUPER_ADMIN') {
     throw new Error('403 Forbidden: Only Super Administrators can trigger daily shift checklist reset.');
   }
   const { resetDailyChecklistsInDb } = await import('@/lib/repositories/checklistRepository');
@@ -156,19 +156,25 @@ export async function resetDailyChecklistsAction() {
 
 export async function saveAuditLogAction(log: import('@/lib/types').AuditLog) {
   const caller = await getAuthenticatedServerUser();
+  if (!caller) {
+    throw new Error('401 Unauthorized: Authentication required to write audit logs.');
+  }
   const { insertAuditLog } = await import('@/lib/repositories/auditRepository');
 
   const verifiedLog: import('@/lib/types').AuditLog = {
     ...log,
-    userId: caller?.id || log.userId,
-    userName: caller?.fullName || log.userName,
+    userId: caller.id,
+    userName: caller.fullName,
   };
   await insertAuditLog(verifiedLog);
 }
 
 export async function resetDailyChecklistShiftAction() {
   const caller = await getAuthenticatedServerUser();
-  if (caller && caller.role !== 'SUPER_ADMIN') {
+  if (!caller) {
+    throw new Error('401 Unauthorized: Authentication required.');
+  }
+  if (caller.role !== 'SUPER_ADMIN') {
     throw new Error('403 Forbidden: Only Super Administrators can trigger daily shift checklist reset.');
   }
   const { resetDailyChecklistsInDb } = await import('@/lib/repositories/checklistRepository');

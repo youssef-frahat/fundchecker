@@ -10,55 +10,43 @@ export async function createTransferBatchWithLines(
 ): Promise<string> {
   const supabase = await getDbClient();
 
-  // 1. Insert Batch Header
-  const { data: batch, error: batchErr } = await supabase
-    .from('transfer_sheet_batches')
-    .insert([
-      {
-        batch_number: batchData.batchNumber,
-        allocation_file_id: batchData.allocationFileId,
-        business_date: batchData.businessDate,
-        status: batchData.status || 'DRAFT',
-        total_buy_amount: batchData.totalBuyAmount,
-        total_sell_amount: batchData.totalSellAmount,
-        total_net_amount: batchData.totalNetAmount,
-        maker_id: batchData.makerId,
-      },
-    ])
-    .select('id')
-    .single();
+  // DAT-01: Atomic batch+lines creation via PostgreSQL stored procedure
+  // Guarantees full ACID rollback if any line insert fails (zero orphaned batch headers)
+  const p_batch = {
+    batch_number: batchData.batchNumber,
+    allocation_file_id: batchData.allocationFileId,
+    business_date: batchData.businessDate,
+    status: batchData.status || 'DRAFT',
+    total_buy_amount: batchData.totalBuyAmount,
+    total_sell_amount: batchData.totalSellAmount,
+    total_net_amount: batchData.totalNetAmount,
+    maker_id: batchData.makerId,
+    maker_name: batchData.makerName,
+  };
 
-  if (batchErr || !batch) {
-    throw new Error(
-      `[DB ERROR] createTransferBatchWithLines: Failed to insert transfer_sheet_batches record. ` +
-      `Details: ${batchErr?.message || 'No batch record returned.'}`
-    );
-  }
-
-  const batchId = String(batch.id);
-
-  // 2. Insert Lines Batch
-  const dbLines = linesData.map((l) => ({
-    batch_id: batchId,
+  const p_lines = linesData.map((l) => ({
     symbol_code: l.symbolCode,
     symbol_name: l.symbolName,
     actual_symbol: l.actualSymbol,
-
     system_buy_amount: l.systemBuyAmount,
     system_sell_amount: l.systemSellAmount,
     adjustment_amount: l.adjustmentAmount || 0,
     is_manually_adjusted: false,
   }));
 
-  const { error: linesErr } = await supabase.from('transfer_sheet_lines').insert(dbLines);
-  if (linesErr) {
+  const { data: batchId, error: rpcErr } = await supabase.rpc('create_transfer_batch_atomic', {
+    p_batch,
+    p_lines,
+  });
+
+  if (rpcErr || !batchId) {
     throw new Error(
-      `[DB ERROR] createTransferBatchWithLines: Failed to insert ${dbLines.length} transfer_sheet_lines for batch ${batchId}. ` +
-      `Details: ${linesErr.message}`
+      `[DB ERROR] createTransferBatchWithLines: Atomic transaction failed. ` +
+      `Details: ${rpcErr?.message || 'No batch ID returned from RPC.'}`
     );
   }
 
-  return batchId;
+  return String(batchId);
 }
 
 
