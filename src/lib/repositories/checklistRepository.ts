@@ -48,21 +48,33 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
       const completedAtStr = item.completed_at ? String(item.completed_at) : undefined;
       const isCompleted = Boolean(item.is_completed) && isFromCurrentCairoShift(completedAtStr);
 
-      // Determine approval status (supports dedicated column or status/reopen fallback)
-      const hasReopenedApproved = item.reopened_by_name && String(item.reopened_by_name).startsWith('APPROVED_BY:');
+      // Determine approval status safely
+      const hasReopenedApproved =
+        (item.reopened_by_name && String(item.reopened_by_name).startsWith('APPROVED_BY:')) ||
+        item.reopen_reason === 'APPROVED';
       const isApproved = Boolean(item.is_approved) || item.status === 'APPROVED' || Boolean(hasReopenedApproved);
 
       const approvedByName = item.approved_by_name
         ? String(item.approved_by_name)
-        : hasReopenedApproved
+        : item.reopened_by_name && String(item.reopened_by_name).startsWith('APPROVED_BY:')
         ? String(item.reopened_by_name).replace('APPROVED_BY: ', '')
         : undefined;
 
       const approvedAt = item.approved_at
         ? String(item.approved_at)
-        : (isApproved && item.reopened_at)
+        : isApproved && item.reopened_at
         ? String(item.reopened_at)
         : undefined;
+
+      const isLateResolved = item.reopen_reason && String(item.reopen_reason).startsWith('LATE_RESOLVED:');
+      const isBreached = item.reopen_reason && String(item.reopen_reason).startsWith('BREACHED:');
+      const itemStatus = isLateResolved
+        ? 'LATE_RESOLVED'
+        : isBreached
+        ? 'BREACHED'
+        : isApproved
+        ? 'APPROVED'
+        : String(item.status || 'ACTIVE');
 
       const existing = checklistMap.get(code);
       if (!existing || (!existing.isCompleted && isCompleted) || (!existing.isApproved && isApproved)) {
@@ -86,7 +98,7 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
           reopenedByName: !hasReopenedApproved && item.reopened_by_name ? String(item.reopened_by_name) : undefined,
           reopenedAt: !hasReopenedApproved && item.reopened_at ? String(item.reopened_at) : undefined,
           reopenReason: item.reopen_reason ? String(item.reopen_reason) : undefined,
-          status: String(item.status || 'ACTIVE'),
+          status: itemStatus,
         });
       }
     }
@@ -147,21 +159,22 @@ export async function resolveLateChecklistItemInDb(
     const payload = resolution === 'RESOLVED'
       ? {
           is_completed: true,
-          status: 'LATE_RESOLVED',
+          status: 'ACTIVE',
           completed_by: resolvedUuid,
           completed_by_name: `${approverName} (Late Override)`,
           completed_at: now,
+          reopened_by: resolvedUuid,
           reopened_by_name: `APPROVED_BY: ${approverName}`,
           reopened_at: now,
-          reopen_reason: reason,
+          reopen_reason: `LATE_RESOLVED: ${reason}`,
         }
       : {
           is_completed: false,
-          status: 'BREACHED',
+          status: 'ACTIVE',
           reopened_by: resolvedUuid,
           reopened_by_name: approverName,
           reopened_at: now,
-          reopen_reason: reason,
+          reopen_reason: `BREACHED: ${reason}`,
         };
 
     if (UUID_REGEX.test(id)) {
@@ -191,19 +204,25 @@ export async function updateChecklistStatusInDb(
       ? userEmail
       : null;
 
-    // If operator unchecks (undo), clear completion
+    // If operator unchecks (undo), clear completion and any pending approval
     const payload = isCompleted
       ? {
           is_completed: true,
+          status: 'ACTIVE',
           completed_by: resolvedUuid,
           completed_by_name: userName || userEmail,
           completed_at: new Date().toISOString(),
         }
       : {
           is_completed: false,
+          status: 'ACTIVE',
           completed_by: null,
           completed_by_name: null,
           completed_at: null,
+          reopened_by: null,
+          reopened_by_name: null,
+          reopened_at: null,
+          reopen_reason: null,
         };
 
     if (UUID_REGEX.test(id)) {
@@ -233,12 +252,14 @@ export async function approveChecklistItemInDb(
     const now = new Date().toISOString();
     const approverName = userName || userEmail;
 
-    // Sets status to APPROVED, records approver name and timestamp
+    // Sets status to ACTIVE, records approver name and timestamp safely without constraint errors
     const payload = {
       is_completed: true,
-      status: 'APPROVED',
+      status: 'ACTIVE',
+      reopened_by: resolvedUuid,
       reopened_by_name: `APPROVED_BY: ${approverName}`,
       reopened_at: now,
+      reopen_reason: 'APPROVED',
     };
 
     if (UUID_REGEX.test(id)) {
