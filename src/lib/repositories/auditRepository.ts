@@ -88,7 +88,7 @@ export async function fetchAuditLogs(limit: number = 200): Promise<AuditLog[]> {
         (uId ? 'User ' + uId.slice(0, 8) : undefined);
 
       if (!resolvedName) {
-        resolvedName = 'ahmedsayed (Super Admin)';
+        resolvedName = uId ? `User (${uId.slice(0, 8)})` : 'System User';
       }
 
       return {

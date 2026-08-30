@@ -15,70 +15,44 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
       return [];
     }
 
-    // Helper: checks if timestamp occurred during today's Cairo trading shift
-    const isSameCairoDay = (isoDateString?: string): boolean => {
-      if (!isoDateString) return false;
-      const d = new Date(isoDateString);
-      const now = new Date();
-      const dStr = d.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
-      const nowStr = now.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
-      return dStr === nowStr;
-    };
+    // Deduplicate by checklist_code so exactly the 4 operational checklist items are displayed
+    const codeOrder = ['CHK-01', 'CHK-02', 'CHK-03', 'CHK-04'];
+    const checklistMap = new Map<string, ChecklistItem>();
 
-    const staleCompletedIds: string[] = [];
-
-    const mapped = data.map((item: Record<string, unknown>) => {
+    for (const item of data) {
+      const code = String(item.checklist_code || 'CHK-01');
       const completedAtStr = item.completed_at ? String(item.completed_at) : undefined;
-      const isCompletedToday = Boolean(item.is_completed) && isSameCairoDay(completedAtStr);
+      const isCompleted = Boolean(item.is_completed);
 
-      // If marked completed on a prior date, queue for automated daily rollover
-      if (item.is_completed && !isCompletedToday) {
-        staleCompletedIds.push(String(item.id));
+      // If we already saw this code, prefer the completed one or first one
+      const existing = checklistMap.get(code);
+      if (!existing || (!existing.isCompleted && isCompleted)) {
+        checklistMap.set(code, {
+          id: String(item.id),
+          checklistId: code,
+          title: String(item.title),
+          description: item.description ? String(item.description) : undefined,
+          dueTime: String(item.due_time || '12:00'),
+          priority: (item.priority as ChecklistItem['priority']) || 'HIGH',
+          mandatory: Boolean(item.mandatory),
+          isCompleted,
+          completedBy: item.completed_by ? String(item.completed_by) : undefined,
+          completedByName: item.completed_by_name ? String(item.completed_by_name) : undefined,
+          completedAt: completedAtStr,
+          reopenedBy: item.reopened_by ? String(item.reopened_by) : undefined,
+          reopenedByName: item.reopened_by_name ? String(item.reopened_by_name) : undefined,
+          reopenedAt: item.reopened_at ? String(item.reopened_at) : undefined,
+          reopenReason: item.reopen_reason ? String(item.reopen_reason) : undefined,
+        });
       }
-
-      return {
-        id: String(item.id),
-        checklistId: String(item.checklist_code || 'c-1'),
-        title: String(item.title),
-        description: item.description ? String(item.description) : undefined,
-        dueTime: String(item.due_time || '12:00'),
-        priority: (item.priority as ChecklistItem['priority']) || 'HIGH',
-        mandatory: Boolean(item.mandatory),
-        isCompleted: isCompletedToday,
-        completedBy: isCompletedToday && item.completed_by ? String(item.completed_by) : undefined,
-        completedByName: isCompletedToday && item.completed_by_name ? String(item.completed_by_name) : undefined,
-        completedAt: isCompletedToday ? completedAtStr : undefined,
-        reopenedBy: isCompletedToday && item.reopened_by ? String(item.reopened_by) : undefined,
-        reopenedByName: isCompletedToday && item.reopened_by_name ? String(item.reopened_by_name) : undefined,
-        reopenedAt: isCompletedToday && item.reopened_at ? String(item.reopened_at) : undefined,
-        reopenReason: isCompletedToday && item.reopen_reason ? String(item.reopen_reason) : undefined,
-      };
-    });
-
-    // Asynchronously perform automated shift reset in PostgreSQL for stale items
-    if (staleCompletedIds.length > 0) {
-      (async () => {
-        try {
-          const { error } = await supabase
-            .from('checklists')
-            .update({
-              is_completed: false,
-              completed_at: null,
-              completed_by_name: null,
-              reopened_at: null,
-              reopened_by_name: null,
-              reopen_reason: null,
-            })
-            .in('id', staleCompletedIds);
-          if (error) throw error;
-          console.log(`Auto-reset ${staleCompletedIds.length} checklist items for new daily operational shift.`);
-        } catch (err) {
-          console.warn('Daily shift auto-reset notice:', err);
-        }
-      })();
     }
 
-    return mapped;
+    // Sort in canonical order CHK-01 -> CHK-04
+    return Array.from(checklistMap.values()).sort((a, b) => {
+      const idxA = codeOrder.indexOf(a.checklistId);
+      const idxB = codeOrder.indexOf(b.checklistId);
+      return (idxA >= 0 ? idxA : 99) - (idxB >= 0 ? idxB : 99);
+    });
   } catch (err) {
     console.warn('Checklist repository fetch notice:', err);
     return [];
@@ -118,6 +92,7 @@ export async function updateChecklistStatusInDb(
       .from('checklists')
       .update({
         is_completed: isCompleted,
+        completed_by: userEmail,
         completed_by_name: userName,
         completed_at: isCompleted ? new Date().toISOString() : null,
       })
@@ -139,6 +114,7 @@ export async function reopenChecklistItemInDb(
       .from('checklists')
       .update({
         is_completed: false,
+        reopened_by: userEmail,
         reopened_by_name: userName,
         reopened_at: new Date().toISOString(),
         reopen_reason: reason,

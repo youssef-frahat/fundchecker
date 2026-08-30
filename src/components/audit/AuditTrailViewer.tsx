@@ -46,7 +46,7 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
   };
 
   const todayStr = getTodayLocal();
-  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   // Category matching helper
@@ -89,9 +89,10 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
     const nv = log.newValues as Record<string, unknown> | undefined;
     if (nv?.userName && String(nv.userName) !== 'System User') return String(nv.userName);
     if (nv?.fullName && String(nv.fullName) !== 'System User') return String(nv.fullName);
-    if (nv?.email) return String(nv.email).split('@')[0];
-    if (nv?.userEmail) return String(nv.userEmail).split('@')[0];
-    return 'ahmedsayed (Super Admin)';
+    if (nv?.userEmail) return String(nv.userEmail);
+    if (nv?.email) return String(nv.email);
+    if (log.userId && log.userId !== 'system') return `User (${log.userId.slice(0, 8)})`;
+    return 'System';
   };
 
   const filteredLogs = logs.filter((l) => {
@@ -373,11 +374,32 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
           </button>
         </div>
 
-        {/* Date Selector with Calendar Icon (Optimized for single-day performance) */}
-        <div className="flex items-center gap-2 text-xs self-end md:self-auto">
-          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
-            <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-semibold text-slate-700 whitespace-nowrap">Audit Date:</span>
+        {/* Date Selector with Calendar Icon */}
+        <div className="flex items-center gap-1.5 text-xs self-end md:self-auto">
+          <button
+            onClick={() => setSelectedDate('')}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition ${
+              !selectedDate
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            All Dates
+          </button>
+
+          <button
+            onClick={() => setSelectedDate(todayStr)}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition ${
+              selectedDate === todayStr
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            Today
+          </button>
+
+          <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
+            <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             <input
               type="date"
               value={selectedDate}
@@ -385,16 +407,6 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
               className="font-mono text-slate-900 font-bold focus:outline-none bg-transparent cursor-pointer text-xs"
             />
           </div>
-
-          {selectedDate !== todayStr && (
-            <button
-              onClick={() => setSelectedDate(todayStr)}
-              className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold transition whitespace-nowrap"
-              title="Return to today's audit logs"
-            >
-              Today
-            </button>
-          )}
 
           <span className="text-[11px] text-slate-500 font-mono whitespace-nowrap">
             ({filteredLogs.length} events)

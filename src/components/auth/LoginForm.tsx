@@ -32,7 +32,11 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
       const result = await loginUserAction(email, password);
 
       if (!result.success || !result.user) {
-        setErrorMsg(result.error || 'Invalid credentials. Please verify your email and password.');
+        let msg = result.error || 'Invalid credentials. Please verify your email and password.';
+        if (msg.toLowerCase().includes('email not confirmed')) {
+          msg = 'Email not confirmed: تم إنشاء كود تفعيل تلقائي (04_fix_auth_and_permissions.sql) في Supabase، أو قم بإيقاف Confirm email من إعدادات Supabase Auth.';
+        }
+        setErrorMsg(msg);
         setIsSubmitting(false);
         return;
       }
