@@ -83,14 +83,9 @@ function formatAccountingUI(val: number) {
 
 export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
   nettingRows,
-  totalBuy,
-  totalSell,
-  totalNet,
   currentRole,
   reviewStatus,
   batch,
-  makerName,
-  checkerName,
   onMakerSubmit,
   onCheckerApprove,
   onNavigateToUpload,
@@ -196,10 +191,6 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
       maximumFractionDigits: 2,
     }).format(val);
   };
-
-  // Calculations for KPI cards
-  const totalAdjustments = activeLines.reduce((acc, l) => acc + (l.adjustmentAmount || 0), 0);
-  const totalFinalTransfer = totalNet + totalAdjustments;
 
   const [isExportingExcel, setIsExportingExcel] = useState(false);
 
@@ -330,52 +321,6 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Total System Buy</p>
-          <p className="text-xl font-bold font-mono text-slate-900 mt-1">
-            {formatFinancialNumber(totalBuy)} <span className="text-xs font-sans font-normal text-slate-600">EGP</span>
-          </p>
-          <p className="text-[11px] text-slate-600 mt-1">Immutable Market Execution</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Total System Sell</p>
-          <p className="text-xl font-bold font-mono text-slate-900 mt-1">
-            {formatFinancialNumber(totalSell)} <span className="text-xs font-sans font-normal text-slate-600">EGP</span>
-          </p>
-          <p className="text-[11px] text-slate-600 mt-1">Immutable Market Execution</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-600">System Net Transfer</p>
-          <p
-            className={`text-xl font-bold font-mono mt-1 ${
-              totalNet < 0 ? 'text-rose-700' : 'text-emerald-700'
-            }`}
-          >
-            {formatAccountingUI(totalNet).text}{' '}
-            <span className="text-xs font-sans font-normal text-slate-600">EGP</span>
-          </p>
-          <p className="text-[11px] text-slate-600 mt-1">System Sell - System Buy</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-4 rounded-xl shadow-xs text-white">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-300">Final Transfer Amount</p>
-          <p
-            className={`text-xl font-bold font-mono mt-1 ${
-              totalFinalTransfer < 0 ? 'text-rose-400' : 'text-emerald-400'
-            }`}
-          >
-            {formatAccountingUI(totalFinalTransfer).text}{' '}
-            <span className="text-xs font-sans font-normal text-slate-400">EGP</span>
-          </p>
-          <p className="text-[11px] text-amber-300 mt-1">
-            Net + Adjustments ({formatAccountingUI(totalAdjustments).text})
-          </p>
-        </div>
-      </div>
 
       {/* Main Netting Table */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
