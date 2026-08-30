@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { X, FileSpreadsheet, Download, RefreshCw } from 'lucide-react';
+import { X, FileSpreadsheet, Download, RefreshCw, AlertTriangle } from 'lucide-react';
 import { UploadedFileRecord, RawTransactionRow, TransferSheetLine } from '@/lib/types';
 import { fetchHistoricalFileRowsAction } from '@/app/actions/workspaceActions';
-import { exportTransactionSheetsPerProduct } from '@/lib/excel-engine';
+import { exportTransactionSheetsPerProduct, exportTransferSheetBatchExcel } from '@/lib/excel-engine';
 
 interface HistoricalFileViewerModalProps {
   fileRecord: UploadedFileRecord;
@@ -62,31 +62,79 @@ export function HistoricalFileViewerModal({ fileRecord, onClose }: HistoricalFil
     );
   });
 
-  const handleExportReconstructedExcel = async () => {
-    if (isAllocation || rows.length === 0) return;
-    const generatedRows: import('@/lib/types').GeneratedTransactionRow[] = rows.map((r) => ({
-      transactionId: r.requestId,
-      transactionType: (r.orderSide.toLowerCase() === 'sell' ? 'sell' : 'buy') as 'buy' | 'sell',
-      transactionDate: r.orderDate ? r.orderDate.split('T')[0] : new Date().toISOString().split('T')[0],
-      externalCode: r.mubasherNo || r.symbol,
-      name: r.customerName,
-      transactionValue: r.orderValue,
-      qty: r.quantity,
-      branchId: 1,
-      valueDate: r.orderDate ? r.orderDate.split('T')[0] : new Date().toISOString().split('T')[0],
-      icPrice: r.price,
-      fees: 0,
-      productName: r.symbolDescription || r.symbol,
-    }));
+  const handleDownload = async () => {
+    try {
+      if (isAllocation && lines.length > 0) {
+        const blob = await exportTransferSheetBatchExcel(lines, fileRecord.fileName);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Netting_Sheet_${fileRecord.fileName.replace(/\.[^/.]+$/, '')}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
 
-    const blob = await exportTransactionSheetsPerProduct(generatedRows);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Historical_${fileRecord.fileName.replace(/\.[^/.]+$/, '')}_Audit.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+      if (rows.length > 0) {
+        const generatedRows: import('@/lib/types').GeneratedTransactionRow[] = rows.map((r) => ({
+          transactionId: r.requestId,
+          transactionType: (r.orderSide.toLowerCase() === 'sell' ? 'sell' : 'buy') as 'buy' | 'sell',
+          transactionDate: r.orderDate ? r.orderDate.split('T')[0] : new Date().toISOString().split('T')[0],
+          externalCode: r.mubasherNo || r.symbol,
+          name: r.customerName,
+          transactionValue: r.orderValue,
+          qty: r.quantity,
+          branchId: 1,
+          valueDate: r.orderDate ? r.orderDate.split('T')[0] : new Date().toISOString().split('T')[0],
+          icPrice: r.price,
+          fees: 0,
+          productName: r.symbolDescription || r.symbol,
+        }));
+
+        const blob = await exportTransactionSheetsPerProduct(generatedRows);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Historical_${fileRecord.fileName.replace(/\.[^/.]+$/, '')}_Audit.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+
+      // If no stored rows (e.g. failed during ingestion), export Diagnostic Forensic Report
+      const reportText = [
+        '====================================================',
+        'INVESTMENT OPERATIONS PLATFORM - INGESTION AUDIT REPORT',
+        '====================================================',
+        `File Name: ${fileRecord.fileName}`,
+        `File Category: ${fileRecord.fileCategory || 'ORDERS'}`,
+        `Ingestion Status: ${fileRecord.status}`,
+        `Cryptographic SHA-256 Hash: ${fileRecord.fileHashSha256 || 'N/A'}`,
+        `Original Row Count: ${fileRecord.rowCount}`,
+        `Original File Size: ${(fileRecord.fileSize / 1024).toFixed(2)} KB`,
+        `Uploaded By: ${fileRecord.uploadedByName || fileRecord.uploadedBy || 'User'}`,
+        `Upload Timestamp (Cairo): ${new Date(fileRecord.uploadedAt).toLocaleString('en-US', { timeZone: 'Africa/Cairo' })}`,
+        '',
+        '--- AUDIT DIAGNOSIS & INTEGRITY CHECK ---',
+        fileRecord.status === 'FAILED'
+          ? 'STATUS: FAILED (Rollback Triggered)\nDIAGNOSIS: Ingestion pipeline encountered an error during database or storage persistence.\nDATA INTEGRITY: All unconfirmed rows were safely rolled back to prevent dirty reads.'
+          : 'STATUS: RECORDED\nDATA INTEGRITY: File metadata permanently cataloged in public.uploaded_files.',
+        '====================================================',
+      ].join('\r\n');
+
+      const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Audit_Diagnostic_${fileRecord.fileName.replace(/\.[^/.]+$/, '')}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Download error:', err);
+    }
   };
 
   return (
@@ -122,15 +170,24 @@ export function HistoricalFileViewerModal({ fileRecord, onClose }: HistoricalFil
           </div>
 
           <div className="flex items-center gap-2">
-            {!isAllocation && rows.length > 0 && (
-              <button
-                onClick={handleExportReconstructedExcel}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow-sm"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export Clean (.xlsx)
-              </button>
-            )}
+            <button
+              onClick={handleDownload}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-3.5 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow-sm"
+              title={
+                rows.length > 0
+                  ? 'Download Orders Excel (.xlsx)'
+                  : isAllocation && lines.length > 0
+                  ? 'Download Netting Excel (.xlsx)'
+                  : 'Download Forensic Diagnostic Report (.txt)'
+              }
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>
+                {rows.length > 0 || (isAllocation && lines.length > 0)
+                  ? 'Download (.xlsx)'
+                  : 'Download Diagnostic (.txt)'}
+              </span>
+            </button>
             <button
               onClick={onClose}
               className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
@@ -253,8 +310,31 @@ export function HistoricalFileViewerModal({ fileRecord, onClose }: HistoricalFil
                 <tbody className="divide-y divide-slate-100">
                   {filteredOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="p-8 text-center text-slate-400 font-sans">
-                        No orders match search.
+                      <td colSpan={10} className="p-8 text-center">
+                        {fileRecord.status === 'FAILED' ? (
+                          <div className="max-w-md mx-auto py-4 space-y-3 font-sans" dir="rtl">
+                            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto border border-rose-200">
+                              <AlertTriangle className="w-6 h-6" />
+                            </div>
+                            <h4 className="font-bold text-slate-900 text-sm">
+                              حالة المعالجة: لم تكتمل معالجة هذا الملف (Processing Failed)
+                            </h4>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              تم تسجيل محاولة رفع الملف والهاش الرقمي الخاص به في الأرشيف، ولكن حدث تراجع أمان (Rollback) أثناء محاولة الرفع السابقة لحماية اتساق البيانات، ولذلك لا توجد صفوف غير مؤكدة مخزنة.
+                            </p>
+                            <div className="pt-1">
+                              <button
+                                onClick={handleDownload}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs"
+                              >
+                                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>تحميل تقرير فحص الملف الرقمي (.txt)</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 font-sans">No orders match search.</span>
+                        )}
                       </td>
                     </tr>
                   ) : (

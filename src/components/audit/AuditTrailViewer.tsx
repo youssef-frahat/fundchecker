@@ -48,6 +48,28 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
   const todayStr = getTodayLocal();
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [fileSearchQuery, setFileSearchQuery] = useState<string>('');
+  const [fileSelectedDate, setFileSelectedDate] = useState<string>('');
+
+  const filteredFiles = uploadedFiles.filter((f) => {
+    const q = fileSearchQuery.toLowerCase();
+    const matchesSearch =
+      !q ||
+      f.fileName.toLowerCase().includes(q) ||
+      (f.uploadedByName && f.uploadedByName.toLowerCase().includes(q)) ||
+      (f.fileCategory && f.fileCategory.toLowerCase().includes(q)) ||
+      f.status.toLowerCase().includes(q);
+
+    let matchesDate = true;
+    if (fileSelectedDate) {
+      const fileDate = new Date(f.uploadedAt);
+      const year = fileDate.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric' });
+      const month = fileDate.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo', month: '2-digit' });
+      const day = fileDate.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo', day: '2-digit' });
+      matchesDate = `${year}-${month}-${day}` === fileSelectedDate;
+    }
+    return matchesSearch && matchesDate;
+  });
 
   // Category matching helper
   const matchesCategory = (log: AuditLog, cat: AuditCategory): boolean => {
@@ -197,11 +219,65 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
             </span>
           </div>
 
-          {uploadedFiles.length === 0 ? (
+          {/* Files Filter Toolbar: Search & Clean English Date Picker */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search spreadsheets (name, uploader, status)..."
+                value={fileSearchQuery}
+                onChange={(e) => setFileSearchQuery(e.target.value)}
+                className="bg-white border border-slate-300 pl-9 pr-3 py-1.5 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-emerald-600 w-full shadow-2xs"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs self-end md:self-auto flex-wrap">
+              <button
+                onClick={() => setFileSelectedDate('')}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                  !fileSelectedDate
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                All Dates
+              </button>
+
+              <button
+                onClick={() => setFileSelectedDate(todayStr)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                  fileSelectedDate === todayStr
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                Today
+              </button>
+
+              <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
+                <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <input
+                  type="date"
+                  lang="en-US"
+                  dir="ltr"
+                  value={fileSelectedDate}
+                  onChange={(e) => setFileSelectedDate(e.target.value)}
+                  className="font-mono text-slate-900 font-bold focus:outline-none bg-transparent cursor-pointer text-xs"
+                />
+              </div>
+
+              <span className="text-[11px] text-slate-500 font-mono whitespace-nowrap">
+                ({filteredFiles.length} files)
+              </span>
+            </div>
+          </div>
+
+          {filteredFiles.length === 0 ? (
             <div className="text-center py-16 bg-slate-50 rounded-xl border border-dashed border-slate-200">
               <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-600">No spreadsheets uploaded yet.</p>
-              <p className="text-xs text-slate-400 mt-1">Upload files in Trade Orders or Cash Transfers to build the audit archive.</p>
+              <p className="text-sm font-semibold text-slate-600">No spreadsheets match your filter.</p>
+              <p className="text-xs text-slate-400 mt-1">Try selecting &quot;All Dates&quot; or clearing your search term.</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -218,7 +294,7 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
-                  {uploadedFiles.map((f) => (
+                  {filteredFiles.map((f) => (
                     <tr key={f.id} className="hover:bg-slate-50/80 transition">
                       <td className="p-3 font-bold text-slate-900 font-sans">{f.fileName}</td>
                       <td className="p-3">
@@ -402,6 +478,8 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
             <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             <input
               type="date"
+              lang="en-US"
+              dir="ltr"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               className="font-mono text-slate-900 font-bold focus:outline-none bg-transparent cursor-pointer text-xs"
