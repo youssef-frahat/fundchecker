@@ -118,6 +118,19 @@ export default function InvestmentPlatformPage() {
     loadDbData();
   }, []);
 
+  // Synchronize checklists and audit logs in real-time across connected users every 8 seconds
+  useEffect(() => {
+    if (activeTab !== 'checklists' && activeTab !== 'audit') return;
+    const interval = setInterval(async () => {
+      const wsData = await fetchWorkspaceDataAction();
+      if (wsData.success) {
+        if (wsData.checklists) setChecklists(wsData.checklists);
+        if (wsData.auditLogs) setAuditLogs(wsData.auditLogs);
+      }
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [activeTab]);
+
 
 
   const handleFileUpload = async (
@@ -332,10 +345,11 @@ export default function InvestmentPlatformPage() {
     if (!currentUser) return;
     const userEmail = currentUser.email;
     const userName = currentUser.fullName;
+    const userId = currentUser.id;
 
     setChecklists((prev) =>
       prev.map((c) =>
-        c.id === itemId
+        c.id === itemId || c.checklistId === itemId
           ? {
               ...c,
               isCompleted: true,
@@ -347,19 +361,25 @@ export default function InvestmentPlatformPage() {
       )
     );
 
-    await updateChecklistStatusAction(itemId, true, userEmail, userName);
+    await updateChecklistStatusAction(itemId, true, userEmail, userName, userId);
     addAuditLog('CHECKLIST_COMPLETE', 'CHECKLIST_ITEM', itemId);
+
+    // Refresh checklists from database to guarantee cross-user parity
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.checklists) {
+      setChecklists(wsData.checklists);
+    }
   };
 
   const handleReopenChecklist = async (itemId: string, reason: string) => {
     if (!currentUser) return;
     const userEmail = currentUser.email;
     const userName = currentUser.fullName;
-
+    const userId = currentUser.id;
 
     setChecklists((prev) =>
       prev.map((c) =>
-        c.id === itemId
+        c.id === itemId || c.checklistId === itemId
           ? {
               ...c,
               isCompleted: false,
@@ -372,8 +392,14 @@ export default function InvestmentPlatformPage() {
       )
     );
 
-    await reopenChecklistAction(itemId, userEmail, userName, reason);
+    await reopenChecklistAction(itemId, userEmail, userName, reason, userId);
     addAuditLog('REOPEN_CHECKLIST', 'CHECKLIST_ITEM', itemId, { reason });
+
+    // Refresh checklists from database to guarantee cross-user parity
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.checklists) {
+      setChecklists(wsData.checklists);
+    }
   };
 
   const handleResolveException = (id: string) => {
@@ -479,7 +505,17 @@ export default function InvestmentPlatformPage() {
           setCurrentUser(null);
         }}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          if (tab === 'checklists' || tab === 'audit') {
+            fetchWorkspaceDataAction().then((wsData) => {
+              if (wsData.success) {
+                if (wsData.checklists) setChecklists(wsData.checklists);
+                if (wsData.auditLogs) setAuditLogs(wsData.auditLogs);
+              }
+            });
+          }
+        }}
         pendingReviewsCount={pendingReviewsCount}
         exceptionsCount={openExceptionsCount}
       />

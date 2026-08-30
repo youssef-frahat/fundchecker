@@ -69,20 +69,22 @@ export async function updateChecklistStatusAction(
   id: string,
   isCompleted: boolean,
   userEmail: string,
-  userName: string
+  userName: string,
+  userId?: string
 ) {
   const { updateChecklistStatusInDb } = await import('@/lib/repositories/checklistRepository');
-  await updateChecklistStatusInDb(id, isCompleted, userEmail, userName);
+  await updateChecklistStatusInDb(id, isCompleted, userEmail, userName, userId);
 }
 
 export async function reopenChecklistAction(
   id: string,
   userEmail: string,
   userName: string,
-  reason: string
+  reason: string,
+  userId?: string
 ) {
   const { reopenChecklistItemInDb } = await import('@/lib/repositories/checklistRepository');
-  await reopenChecklistItemInDb(id, userEmail, userName, reason);
+  await reopenChecklistItemInDb(id, userEmail, userName, reason, userId);
 }
 
 export async function saveAuditLogAction(log: import('@/lib/types').AuditLog) {

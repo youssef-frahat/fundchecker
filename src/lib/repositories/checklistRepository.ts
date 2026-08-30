@@ -80,23 +80,35 @@ export async function resetDailyChecklistsInDb(): Promise<void> {
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function updateChecklistStatusInDb(
   id: string,
   isCompleted: boolean,
   userEmail: string,
-  userName: string
+  userName: string,
+  userId?: string
 ): Promise<void> {
   try {
     const supabase = await getDbClient();
-    await supabase
-      .from('checklists')
-      .update({
-        is_completed: isCompleted,
-        completed_by: userEmail,
-        completed_by_name: userName,
-        completed_at: isCompleted ? new Date().toISOString() : null,
-      })
-      .eq('id', id);
+    const resolvedUuid = userId && UUID_REGEX.test(userId)
+      ? userId
+      : userEmail && UUID_REGEX.test(userEmail)
+      ? userEmail
+      : null;
+
+    const payload = {
+      is_completed: isCompleted,
+      completed_by: resolvedUuid,
+      completed_by_name: userName || userEmail,
+      completed_at: isCompleted ? new Date().toISOString() : null,
+    };
+
+    if (UUID_REGEX.test(id)) {
+      await supabase.from('checklists').update(payload).eq('id', id);
+    } else {
+      await supabase.from('checklists').update(payload).eq('checklist_code', id);
+    }
   } catch (err) {
     console.warn('Checklist repository update notice:', err);
   }
@@ -106,20 +118,30 @@ export async function reopenChecklistItemInDb(
   id: string,
   userEmail: string,
   userName: string,
-  reason: string
+  reason: string,
+  userId?: string
 ): Promise<void> {
   try {
     const supabase = await getDbClient();
-    await supabase
-      .from('checklists')
-      .update({
-        is_completed: false,
-        reopened_by: userEmail,
-        reopened_by_name: userName,
-        reopened_at: new Date().toISOString(),
-        reopen_reason: reason,
-      })
-      .eq('id', id);
+    const resolvedUuid = userId && UUID_REGEX.test(userId)
+      ? userId
+      : userEmail && UUID_REGEX.test(userEmail)
+      ? userEmail
+      : null;
+
+    const payload = {
+      is_completed: false,
+      reopened_by: resolvedUuid,
+      reopened_by_name: userName || userEmail,
+      reopened_at: new Date().toISOString(),
+      reopen_reason: reason,
+    };
+
+    if (UUID_REGEX.test(id)) {
+      await supabase.from('checklists').update(payload).eq('id', id);
+    } else {
+      await supabase.from('checklists').update(payload).eq('checklist_code', id);
+    }
   } catch (err) {
     console.warn('Checklist repository reopen notice:', err);
   }
