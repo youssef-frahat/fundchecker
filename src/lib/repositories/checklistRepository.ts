@@ -1,7 +1,10 @@
 // Checklist Repository - Database Access for Daily Operational Checklists
+// REMEDIATION ARC-01: Dedicated columns for is_approved, approved_by, approved_by_name, approved_at
 
 import { getDbClient } from '../db-client';
 import { ChecklistItem } from '../types';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Helper: Determines current Cairo daily operational shift date (Shift begins at 06:00 AM)
 const isFromCurrentCairoShift = (timestampStr?: string): boolean => {
@@ -9,14 +12,12 @@ const isFromCurrentCairoShift = (timestampStr?: string): boolean => {
   const d = new Date(timestampStr);
   const now = new Date();
 
-  // Current Cairo Date & Hour
   const cairoNowDate = now.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
   const cairoNowHour = parseInt(
     now.toLocaleTimeString('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', hour12: false }),
     10
   );
 
-  // If before 6 AM, current shift belongs to yesterday's date
   let currentShiftDate = cairoNowDate;
   if (cairoNowHour < 6) {
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -39,7 +40,6 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
       return [];
     }
 
-    // Canonical order for the 7 Real Egyptian Fund Operational Steps
     const codeOrder = ['CHK-01', 'CHK-02', 'CHK-03', 'CHK-04', 'CHK-05', 'CHK-06', 'CHK-07'];
     const checklistMap = new Map<string, ChecklistItem>();
 
@@ -48,11 +48,14 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
       const completedAtStr = item.completed_at ? String(item.completed_at) : undefined;
       const isCompleted = Boolean(item.is_completed) && isFromCurrentCairoShift(completedAtStr);
 
-      // Determine approval status safely
-      const hasReopenedApproved =
+      const hasLegacyReopenedApproved =
         (item.reopened_by_name && String(item.reopened_by_name).startsWith('APPROVED_BY:')) ||
         item.reopen_reason === 'APPROVED';
-      const isApproved = Boolean(item.is_approved) || item.status === 'APPROVED' || Boolean(hasReopenedApproved);
+
+      const isApproved =
+        Boolean(item.is_approved) ||
+        item.status === 'APPROVED' ||
+        Boolean(hasLegacyReopenedApproved);
 
       const approvedByName = item.approved_by_name
         ? String(item.approved_by_name)
@@ -95,15 +98,14 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
           approvedByName,
           approvedAt,
           reopenedBy: item.reopened_by ? String(item.reopened_by) : undefined,
-          reopenedByName: !hasReopenedApproved && item.reopened_by_name ? String(item.reopened_by_name) : undefined,
-          reopenedAt: !hasReopenedApproved && item.reopened_at ? String(item.reopened_at) : undefined,
+          reopenedByName: !hasLegacyReopenedApproved && item.reopened_by_name ? String(item.reopened_by_name) : undefined,
+          reopenedAt: !hasLegacyReopenedApproved && item.reopened_at ? String(item.reopened_at) : undefined,
           reopenReason: item.reopen_reason ? String(item.reopen_reason) : undefined,
           status: itemStatus,
         });
       }
     }
 
-    // Sort in canonical order CHK-01 -> CHK-07
     return Array.from(checklistMap.values()).sort((a, b) => {
       const idxA = codeOrder.indexOf(a.checklistId);
       const idxB = codeOrder.indexOf(b.checklistId);
@@ -125,6 +127,10 @@ export async function resetDailyChecklistsInDb(): Promise<void> {
         completed_at: null,
         completed_by: null,
         completed_by_name: null,
+        is_approved: false,
+        approved_at: null,
+        approved_by: null,
+        approved_by_name: null,
         reopened_at: null,
         reopened_by: null,
         reopened_by_name: null,
@@ -159,10 +165,14 @@ export async function resolveLateChecklistItemInDb(
     const payload = resolution === 'RESOLVED'
       ? {
           is_completed: true,
-          status: 'ACTIVE',
           completed_by: resolvedUuid,
           completed_by_name: `${approverName} (Late Override)`,
           completed_at: now,
+          is_approved: true,
+          approved_by: resolvedUuid,
+          approved_by_name: `${approverName} (Late Override)`,
+          approved_at: now,
+          status: 'ACTIVE',
           reopened_by: resolvedUuid,
           reopened_by_name: `APPROVED_BY: ${approverName}`,
           reopened_at: now,
@@ -170,6 +180,10 @@ export async function resolveLateChecklistItemInDb(
         }
       : {
           is_completed: false,
+          is_approved: false,
+          approved_by: null,
+          approved_by_name: null,
+          approved_at: null,
           status: 'ACTIVE',
           reopened_by: resolvedUuid,
           reopened_by_name: approverName,
@@ -187,8 +201,6 @@ export async function resolveLateChecklistItemInDb(
   }
 }
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export async function updateChecklistStatusInDb(
   id: string,
   isCompleted: boolean,
@@ -204,7 +216,6 @@ export async function updateChecklistStatusInDb(
       ? userEmail
       : null;
 
-    // If operator unchecks (undo), clear completion and any pending approval
     const payload = isCompleted
       ? {
           is_completed: true,
@@ -219,6 +230,10 @@ export async function updateChecklistStatusInDb(
           completed_by: null,
           completed_by_name: null,
           completed_at: null,
+          is_approved: false,
+          approved_by: null,
+          approved_by_name: null,
+          approved_at: null,
           reopened_by: null,
           reopened_by_name: null,
           reopened_at: null,
@@ -252,9 +267,12 @@ export async function approveChecklistItemInDb(
     const now = new Date().toISOString();
     const approverName = userName || userEmail;
 
-    // Sets status to ACTIVE, records approver name and timestamp safely without constraint errors
     const payload = {
       is_completed: true,
+      is_approved: true,
+      approved_by: resolvedUuid,
+      approved_by_name: approverName,
+      approved_at: now,
       status: 'ACTIVE',
       reopened_by: resolvedUuid,
       reopened_by_name: `APPROVED_BY: ${approverName}`,
@@ -289,6 +307,10 @@ export async function reopenChecklistItemInDb(
 
     const payload = {
       is_completed: false,
+      is_approved: false,
+      approved_by: null,
+      approved_by_name: null,
+      approved_at: null,
       status: 'ACTIVE',
       reopened_by: resolvedUuid,
       reopened_by_name: userName || userEmail,

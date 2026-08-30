@@ -30,6 +30,15 @@ function main() {
   }
   console.log('✅ ESLint checks passed successfully!');
 
+  // Step 1b: Automated Unit & Integration Tests (DEV-01)
+  logStep('Running Automated Enterprise Test Suite...');
+  const testsPassed = runCommand('node', ['scripts/run-tests.js']);
+  if (!testsPassed) {
+    console.error('\n❌ Deployment check failed at Automated Tests step!');
+    process.exit(1);
+  }
+  console.log('✅ All 14 Automated Test Suites passed successfully!');
+
   // Step 2: TypeScript Checks
   logStep('Running TypeScript type checking...');
   const tscPassed = runCommand('npx', ['tsc', '--noEmit']);

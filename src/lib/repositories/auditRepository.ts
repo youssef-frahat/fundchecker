@@ -59,15 +59,21 @@ export async function insertAuditLogsBatch(logs: AuditLog[]): Promise<void> {
   }
 }
 
-export async function fetchAuditLogs(limit: number = 200): Promise<AuditLog[]> {
+export async function fetchAuditLogs(limit: number = 200, cursor?: string): Promise<AuditLog[]> {
   try {
     const supabase = await getDbClient();
+    let query = supabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (cursor) {
+      query = query.lt('created_at', cursor);
+    }
+
     const [{ data, error }, { data: users }] = await Promise.all([
-      supabase
-        .from('audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(limit),
+      query,
       supabase
         .from('users')
         .select('id, full_name, email'),
