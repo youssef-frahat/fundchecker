@@ -3,6 +3,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { Layers, FileSpreadsheet, Clock } from 'lucide-react';
 import { Navbar } from '@/components/layout/Navbar';
 import { LoginForm } from '@/components/auth/LoginForm';
 import { OverviewCards } from '@/components/dashboard/OverviewCards';
@@ -69,7 +70,7 @@ export default function InvestmentPlatformPage() {
     role: UserRole;
   } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTab] = useState<string>('orders');
   const [currentTransferBatch, setCurrentTransferBatch] = useState<TransferSheetBatch | null>(null);
 
   const [users, setUsers] = useState<UserType[]>([]);
@@ -141,6 +142,7 @@ export default function InvestmentPlatformPage() {
         return;
       }
       setCurrentTransferBatch(allocResult.batch);
+      setRawTransactions([]); // Clear raw orders so that Netting View is driven strictly by the new allocation batch
       setActiveTab('netting'); // Automatically navigate to Transfer Netting Sheet
       const freshLogs = await fetchAuditLogsAction();
       setAuditLogs(freshLogs);
@@ -148,7 +150,8 @@ export default function InvestmentPlatformPage() {
     }
 
     // Otherwise: Standard Orders File pipeline for Transaction Reports
-    setRawTransactions((prev) => [...parsedRows, ...prev]);
+    setRawTransactions(parsedRows);
+    setCurrentTransferBatch(null);
 
     // Execute Production Processing Engine via Server Action
     const result = await processTradeFileAction(
@@ -497,79 +500,72 @@ export default function InvestmentPlatformPage() {
           </div>
         )}
 
-        {activeTab === 'dashboard' && (
+
+
+        {(activeTab === 'orders' || activeTab === 'ingestion') && (
           <div className="space-y-8">
-            <OverviewCards
-              totalRowsProcessed={
-                rawTransactions.length > 0
-                  ? rawTransactions.length
-                  : uploadedFiles.reduce((acc, f) => acc + (f.rowCount || 0), 0)
-              }
-              totalFilesCount={uploadedFiles.length}
-              totalBuyAmount={
-                currentTransferBatch
-                  ? currentTransferBatch.totalBuyAmount
-                  : nettingSummary.totalBuy
-              }
-              totalSellAmount={
-                currentTransferBatch
-                  ? currentTransferBatch.totalSellAmount
-                  : nettingSummary.totalSell
-              }
-              totalNetAmount={
-                currentTransferBatch
-                  ? currentTransferBatch.totalNetAmount
-                  : nettingSummary.totalNet
-              }
-
-              pendingReviewsCount={pendingReviewsCount}
-              exceptionsCount={openExceptionsCount}
-              completedChecklistsCount={checklists.filter((c) => c.isCompleted).length}
-              totalChecklistsCount={checklists.length}
-            />
-
-
-            <FileUploader
-              onFileUpload={handleFileUpload}
-              existingHashes={existingHashes}
-              uploaderEmail={currentUser?.email}
-              uploaderName={currentUser?.fullName}
-            />
-
-            {generatedRows.length > 0 && <TransactionReportTable rows={generatedRows} />}
-          </div>
-        )}
-
-        {activeTab === 'ingestion' && (
-          <div className="space-y-8">
-            <FileUploader
-              onFileUpload={handleFileUpload}
-              existingHashes={existingHashes}
-              uploaderEmail={currentUser?.email}
-              uploaderName={currentUser?.fullName}
-            />
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+              <div className="mb-4">
+                <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-emerald-600" />
+                  Trade Orders File Ingestion
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Upload daily trading file (39-column raw orders) to parse customer orders and generate fund transaction sheets.
+                </p>
+              </div>
+              <FileUploader
+                onFileUpload={handleFileUpload}
+                existingHashes={existingHashes}
+                uploaderEmail={currentUser?.email}
+                uploaderName={currentUser?.fullName}
+                defaultCategory="ORDERS"
+                hideCategorySelector={true}
+              />
+            </div>
             <TransactionReportTable rows={generatedRows} />
           </div>
         )}
 
+        {(activeTab === 'transfers' || activeTab === 'netting') && (
+          <div className="space-y-8">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+              <div className="mb-4">
+                <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-purple-600" />
+                  Cash Netting &amp; Allocation Sheet Ingestion
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Upload Daily Allocation Excel file to calculate System Net Transfer (Allocated Qty &times; Price: Net = Sell &minus; Buy), record audited adjustments, and perform 4-Eyes digital sign-off.
+                </p>
+              </div>
+              <FileUploader
+                onFileUpload={handleFileUpload}
+                existingHashes={existingHashes}
+                uploaderEmail={currentUser?.email}
+                uploaderName={currentUser?.fullName}
+                defaultCategory="ALLOCATION"
+                hideCategorySelector={true}
+              />
+            </div>
 
-        {activeTab === 'netting' && (
-          <TransferSheetView
-            nettingRows={effectiveNettingRows}
-            totalBuy={effectiveTotalBuy}
-            totalSell={effectiveTotalSell}
-            totalNet={effectiveTotalNet}
-            currentRole={currentUser.role}
-            reviewStatus={reviewStatus}
-            batch={currentTransferBatch}
-            makerName={makerName}
-            checkerName={checkerName}
-            onMakerSubmit={handleMakerSubmit}
-            onCheckerApprove={handleCheckerApprove}
-            onNavigateToUpload={() => setActiveTab('ingestion')}
-            onAdjustLine={handleAdjustTransferLine}
-            onReviewSingleFund={handleReviewSingleFund}
-          />
+            <TransferSheetView
+              nettingRows={effectiveNettingRows}
+              totalBuy={effectiveTotalBuy}
+              totalSell={effectiveTotalSell}
+              totalNet={effectiveTotalNet}
+              currentRole={currentUser.role}
+              reviewStatus={reviewStatus}
+              batch={currentTransferBatch}
+              makerName={makerName}
+              checkerName={checkerName}
+              onMakerSubmit={handleMakerSubmit}
+              onCheckerApprove={handleCheckerApprove}
+              onNavigateToUpload={() => {}}
+              onAdjustLine={handleAdjustTransferLine}
+              onReviewSingleFund={handleReviewSingleFund}
+            />
+          </div>
         )}
 
         {activeTab === 'checklists' && (
@@ -585,7 +581,9 @@ export default function InvestmentPlatformPage() {
           <ExceptionCenter exceptions={exceptions} onResolveException={handleResolveException} />
         )}
 
-        {activeTab === 'audit' && <AuditTrailViewer logs={auditLogs} />}
+        {activeTab === 'audit' && (
+          <AuditTrailViewer logs={auditLogs} uploadedFiles={uploadedFiles} />
+        )}
 
         {activeTab === 'admin' && currentUser.role === 'SUPER_ADMIN' && (
           <div className="space-y-8">

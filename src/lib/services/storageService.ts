@@ -2,7 +2,7 @@
 // REMEDIATION STG-2: upsert:false — prevents overwriting approved financial reports
 // REMEDIATION STG-3: getReportSignedUrl — replaces public URL with time-limited signed URL
 
-import { supabase } from '../supabase';
+import { getDbClient } from '../db-client';
 
 const BUCKET_NAME = 'reports';
 
@@ -12,6 +12,7 @@ export async function uploadReportToStorage(
   contentType: string = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 ): Promise<{ success: boolean; storagePath?: string; error?: string }> {
   try {
+    const supabase = await getDbClient();
     const fileBuffer = await fileBlob.arrayBuffer();
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
@@ -35,6 +36,7 @@ export async function downloadReportFromStorage(
   filePath: string
 ): Promise<{ success: boolean; data?: Blob; error?: string }> {
   try {
+    const supabase = await getDbClient();
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
       .download(filePath);
@@ -60,6 +62,7 @@ export async function getReportSignedUrl(
   expiresInSeconds: number = 300
 ): Promise<{ success: boolean; signedUrl?: string; error?: string }> {
   try {
+    const supabase = await getDbClient();
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
       .createSignedUrl(filePath, expiresInSeconds);

@@ -160,6 +160,22 @@ export async function adjustTransferLineAction(
       return { success: false, error: 'Invalid adjustment category provided.' };
     }
 
+    // POST-LOCK IMMUTABILITY GUARD: Cannot adjust locked or approved batches
+    const { getDbClient } = await import('@/lib/db-client');
+    const supabase = await getDbClient();
+    const { data: batch } = await supabase
+      .from('transfer_sheet_batches')
+      .select('status')
+      .eq('id', batchId)
+      .single();
+
+    if (batch && (batch.status === 'LOCKED' || batch.status === 'APPROVED')) {
+      return {
+        success: false,
+        error: 'Operation Denied: Cannot adjust transfer lines on a finalized or locked transfer sheet batch.',
+      };
+    }
+
     const headersList = await headers();
     const clientIp =
       headersList.get('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -253,6 +269,27 @@ export async function reviewTransferBatchAction(
   try {
     const currentUser = await getAuthenticatedServerUser();
     if (!currentUser) return { success: false, error: '401 Unauthorized.' };
+
+    // Fetch batch record to enforce 4-eyes principle and role control
+    const { getDbClient } = await import('@/lib/db-client');
+    const supabase = await getDbClient();
+    const { data: batch, error: batchErr } = await supabase
+      .from('transfer_sheet_batches')
+      .select('maker_id, status')
+      .eq('id', batchId)
+      .single();
+
+    if (batchErr || !batch) {
+      return { success: false, error: 'Transfer sheet batch not found in database.' };
+    }
+
+    // FOUR-EYES PRINCIPLE: Submitter/Maker cannot approve own work
+    if (decision === 'APPROVE' && batch.maker_id === currentUser.id) {
+      return {
+        success: false,
+        error: 'Four-Eyes Principle Violation: Maker cannot approve their own submitted transfer sheet batch. A different checker must review.',
+      };
+    }
 
     const headersList = await headers();
     const clientIp =

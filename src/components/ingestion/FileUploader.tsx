@@ -21,10 +21,19 @@ interface FileUploaderProps {
   existingHashes: string[];
   uploaderEmail?: string;
   uploaderName?: string;
+  defaultCategory?: 'ORDERS' | 'ALLOCATION';
+  hideCategorySelector?: boolean;
 }
 
-export function FileUploader({ onFileUpload, existingHashes, uploaderEmail, uploaderName }: FileUploaderProps) {
-  const [fileCategory, setFileCategory] = useState<'ORDERS' | 'ALLOCATION'>('ORDERS');
+export function FileUploader({
+  onFileUpload,
+  existingHashes,
+  uploaderEmail,
+  uploaderName,
+  defaultCategory = 'ORDERS',
+  hideCategorySelector = false,
+}: FileUploaderProps) {
+  const [fileCategory, setFileCategory] = useState<'ORDERS' | 'ALLOCATION'>(defaultCategory);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -162,36 +171,38 @@ export function FileUploader({ onFileUpload, existingHashes, uploaderEmail, uplo
   return (
     <div className="space-y-6">
       {/* File Purpose / Category Selector */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
-        <div className="text-xs">
-          <span className="font-bold text-slate-900 block">Select Operational File Type:</span>
-          <span className="text-slate-500">Choose whether this file is for trading transaction reports or cash transfer netting.</span>
+      {!hideCategorySelector && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="text-xs">
+            <span className="font-bold text-slate-900 block">Select Operational File Type:</span>
+            <span className="text-slate-500">Choose whether this file is for trading transaction reports or cash transfer netting.</span>
+          </div>
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setFileCategory('ORDERS')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                fileCategory === 'ORDERS'
+                  ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              1. Orders File (Transactions)
+            </button>
+            <button
+              type="button"
+              onClick={() => setFileCategory('ALLOCATION')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                fileCategory === 'ALLOCATION'
+                  ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              2. Allocation File (Transfers)
+            </button>
+          </div>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => setFileCategory('ORDERS')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              fileCategory === 'ORDERS'
-                ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            1. Orders File (Transactions)
-          </button>
-          <button
-            type="button"
-            onClick={() => setFileCategory('ALLOCATION')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              fileCategory === 'ALLOCATION'
-                ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            2. Allocation File (Transfers)
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* File Upload Zone */}
       <div
@@ -226,7 +237,7 @@ export function FileUploader({ onFileUpload, existingHashes, uploaderEmail, uplo
 
           {/* Action Buttons */}
           <div className="flex items-center justify-center gap-3 pt-2">
-            <label className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-2.5 rounded-xl cursor-pointer text-xs transition flex items-center gap-2 shadow-md shadow-emerald-600/20">
+            <label className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-2.5 rounded-xl cursor-pointer text-xs transition flex items-center gap-2 shadow-md shadow-emerald-600/20">
               <FileSpreadsheet className="w-4 h-4" />
               Browse Excel File
               <input
@@ -237,15 +248,6 @@ export function FileUploader({ onFileUpload, existingHashes, uploaderEmail, uplo
                 disabled={isProcessing}
               />
             </label>
-
-            <button
-              onClick={generateSampleExcel}
-              disabled={isProcessing}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold px-4 py-2.5 rounded-xl text-xs transition flex items-center gap-2 border border-slate-300"
-            >
-              <Sparkles className="w-4 h-4 text-emerald-600" />
-              Load Sample Trade File
-            </button>
           </div>
 
           {/* Feature Micro-Badges */}

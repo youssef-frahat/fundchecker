@@ -86,8 +86,16 @@ export async function reopenChecklistAction(
 }
 
 export async function saveAuditLogAction(log: import('@/lib/types').AuditLog) {
+  const { getAuthenticatedServerUser } = await import('@/lib/supabase-server');
+  const caller = await getAuthenticatedServerUser();
   const { insertAuditLog } = await import('@/lib/repositories/auditRepository');
-  await insertAuditLog(log);
+
+  const verifiedLog: import('@/lib/types').AuditLog = {
+    ...log,
+    userId: caller?.id || log.userId,
+    userName: caller?.fullName || log.userName,
+  };
+  await insertAuditLog(verifiedLog);
 }
 
 export async function resetDailyChecklistShiftAction() {
@@ -95,7 +103,118 @@ export async function resetDailyChecklistShiftAction() {
   await resetDailyChecklistsInDb();
 }
 
-export async function fetchAuditLogsAction(limit: number = 100) {
+export async function fetchAuditLogsAction(limit: number = 200) {
   const { fetchAuditLogs } = await import('@/lib/repositories/auditRepository');
   return await fetchAuditLogs(limit);
+}
+
+export async function fetchHistoricalFileRowsAction(fileId: string): Promise<{
+  success: boolean;
+  fileRecord?: import('@/lib/types').UploadedFileRecord;
+  rows?: import('@/lib/types').RawTransactionRow[];
+  lines?: import('@/lib/types').TransferSheetLine[];
+  isAllocation?: boolean;
+  error?: string;
+}> {
+  try {
+    const { getDbClient } = await import('@/lib/db-client');
+    const supabase = await getDbClient();
+
+    // 1. Fetch file record
+    const { data: file, error: fileErr } = await supabase
+      .from('uploaded_files')
+      .select('*')
+      .eq('id', fileId)
+      .single();
+
+    if (fileErr || !file) {
+      return { success: false, error: 'File record not found in database.' };
+    }
+
+    const fileRecord: import('@/lib/types').UploadedFileRecord = {
+      id: String(file.id),
+      fileName: file.file_name,
+      fileHashSha256: file.file_hash_sha256,
+      fileSize: file.file_size,
+      rowCount: file.row_count,
+      uploadedBy: file.uploaded_by || '',
+      uploadedByName: file.uploaded_by_name || 'User',
+      uploadedAt: file.uploaded_at,
+      fileCategory: file.file_category as 'ORDERS' | 'ALLOCATION',
+      status: file.status,
+    };
+
+    if (fileRecord.fileCategory === 'ALLOCATION') {
+      // Fetch corresponding batch and lines
+      const { data: batch } = await supabase
+        .from('transfer_sheet_batches')
+        .select('id')
+        .eq('allocation_file_id', fileId)
+        .maybeSingle();
+
+      if (batch?.id) {
+        const { data: dbLines } = await supabase
+          .from('transfer_sheet_lines')
+          .select('*')
+          .eq('batch_id', batch.id)
+          .order('symbol_code', { ascending: true });
+
+        const lines: import('@/lib/types').TransferSheetLine[] = (dbLines || []).map((l: any) => ({
+          id: String(l.id),
+          batchId: String(l.batch_id),
+          symbolCode: String(l.symbol_code),
+          symbolName: String(l.symbol_name),
+          actualSymbol: l.actual_symbol,
+          systemBuyAmount: Number(l.system_buy_amount) || 0,
+          systemSellAmount: Number(l.system_sell_amount) || 0,
+          systemNetAmount: (Number(l.system_sell_amount) || 0) - (Number(l.system_buy_amount) || 0),
+          adjustmentAmount: Number(l.adjustment_amount) || 0,
+          finalTransferAmount:
+            (Number(l.system_sell_amount) || 0) -
+            (Number(l.system_buy_amount) || 0) +
+            (Number(l.adjustment_amount) || 0),
+          isManuallyAdjusted: Boolean(l.is_manually_adjusted),
+        }));
+
+        return { success: true, fileRecord, lines, isAllocation: true };
+      }
+    }
+
+    // Otherwise fetch raw orders transactions
+    const { data: txs, error: txErr } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('file_id', fileId)
+      .order('created_at', { ascending: true });
+
+    if (txErr) {
+      return { success: false, error: txErr.message };
+    }
+
+    const rows: import('@/lib/types').RawTransactionRow[] = (txs || []).map((t: any) => ({
+      id: String(t.id),
+      fileId: String(t.file_id),
+      requestId: String(t.request_id || ''),
+      mubasherNo: String(t.mubasher_no || ''),
+      customerName: String(t.customer_name || ''),
+      orderSide: String(t.order_side || 'BUY'),
+      symbol: String(t.symbol || ''),
+      symbolDescription: String(t.symbol_description || ''),
+      quantity: Number(t.quantity) || 0,
+      price: Number(t.price) || 0,
+      orderValue: Number(t.order_value) || 0,
+      totalCommission: Number(t.total_commission) || 0,
+      netSettle: Number(t.net_settle) || 0,
+      cashAccountNo: t.cash_account_no,
+      isinCode: t.isin_code,
+      orderDate: t.order_date,
+    }));
+
+    return { success: true, fileRecord, rows, isAllocation: false };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Failed to fetch historical rows.',
+    };
+  }
 }

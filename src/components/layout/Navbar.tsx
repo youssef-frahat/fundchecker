@@ -106,39 +106,27 @@ export function Navbar({
         {/* Navigation Links */}
         <nav className="hidden md:flex items-center gap-1 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
           <button
-            onClick={() => onTabChange('dashboard')}
+            onClick={() => onTabChange('orders')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
-              activeTab === 'dashboard'
-                ? 'bg-white text-emerald-700 font-bold shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            Dashboard
-          </button>
-
-          <button
-            onClick={() => onTabChange('ingestion')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
-              activeTab === 'ingestion'
+              activeTab === 'orders' || activeTab === 'ingestion'
                 ? 'bg-white text-emerald-700 font-bold shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            Trade Files
+            Trade Orders
           </button>
 
           <button
-            onClick={() => onTabChange('netting')}
+            onClick={() => onTabChange('transfers')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
-              activeTab === 'netting'
+              activeTab === 'transfers' || activeTab === 'netting'
                 ? 'bg-white text-emerald-700 font-bold shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
-            Netting Sheets
+            Cash Transfers
           </button>
 
           <button
@@ -179,7 +167,7 @@ export function Navbar({
             }`}
           >
             <Lock className="w-3.5 h-3.5" />
-            Audit Trail
+            Audit &amp; History
           </button>
 
           {currentUser.role === 'SUPER_ADMIN' && (

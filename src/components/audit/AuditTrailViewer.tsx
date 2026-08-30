@@ -20,15 +20,19 @@ import {
   Clock,
   Info,
 } from 'lucide-react';
-import { AuditLog } from '@/lib/types';
+import { AuditLog, UploadedFileRecord } from '@/lib/types';
+import { HistoricalFileViewerModal } from './HistoricalFileViewerModal';
 
 interface AuditTrailViewerProps {
   logs: AuditLog[];
+  uploadedFiles?: UploadedFileRecord[];
 }
 
 type AuditCategory = 'ALL' | 'CHECKLIST' | 'TRANSFER' | 'FILE' | 'USER';
 
-export function AuditTrailViewer({ logs }: AuditTrailViewerProps) {
+export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerProps) {
+  const [activeAuditView, setActiveAuditView] = useState<'LOGS' | 'FILES'>('LOGS');
+  const [inspectingFile, setInspectingFile] = useState<UploadedFileRecord | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<AuditCategory>('ALL');
 
@@ -147,6 +151,119 @@ export function AuditTrailViewer({ logs }: AuditTrailViewerProps) {
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+      {/* Primary Audit View Mode Selector */}
+      <div className="flex items-center gap-2 border-b border-slate-100 pb-4">
+        <button
+          onClick={() => setActiveAuditView('LOGS')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+            activeAuditView === 'LOGS'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          Audit Events Log ({logs.length})
+        </button>
+
+        <button
+          onClick={() => setActiveAuditView('FILES')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+            activeAuditView === 'FILES'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+          Ingestion History &amp; Sheet Archive ({uploadedFiles.length})
+        </button>
+      </div>
+
+      {activeAuditView === 'FILES' ? (
+        /* Ingestion History & File Archive View */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h4 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                Uploaded Spreadsheets Archive
+              </h4>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Every trading orders file and cash netting allocation file ingested into the system is permanently cataloged. Click &quot;Inspect Sheet Data&quot; to inspect stored rows.
+              </p>
+            </div>
+            <span className="text-xs font-mono font-bold bg-slate-100 px-3 py-1 rounded-lg text-slate-700">
+              {uploadedFiles.length} Ingested File(s)
+            </span>
+          </div>
+
+          {uploadedFiles.length === 0 ? (
+            <div className="text-center py-16 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-600">No spreadsheets uploaded yet.</p>
+              <p className="text-xs text-slate-400 mt-1">Upload files in Trade Orders or Cash Transfers to build the audit archive.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-700 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">File Name</th>
+                    <th className="p-3">Category</th>
+                    <th className="p-3 text-right">Row Count</th>
+                    <th className="p-3">Uploaded By</th>
+                    <th className="p-3">Timestamp (Cairo)</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                  {uploadedFiles.map((f) => (
+                    <tr key={f.id} className="hover:bg-slate-50/80 transition">
+                      <td className="p-3 font-bold text-slate-900 font-sans">{f.fileName}</td>
+                      <td className="p-3">
+                        <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          f.fileCategory === 'ALLOCATION'
+                            ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                            : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        }`}>
+                          {f.fileCategory || 'ORDERS'}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-bold text-slate-900">{f.rowCount}</td>
+                      <td className="p-3 text-slate-600 font-sans">{f.uploadedByName || f.uploadedBy || 'User'}</td>
+                      <td className="p-3 text-slate-500">
+                        {new Date(f.uploadedAt).toLocaleString('en-US', { timeZone: 'Africa/Cairo', hour12: true })}
+                      </td>
+                      <td className="p-3">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          f.status === 'PARSED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : f.status === 'FAILED'
+                            ? 'bg-rose-100 text-rose-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {f.status}
+                        </span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <button
+                          onClick={() => setInspectingFile(f)}
+                          className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-sans font-bold text-xs rounded-xl transition flex items-center gap-1.5 mx-auto shadow-2xs"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                          Inspect Sheet Data
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Standard Audit Events View */
+        <>
       {/* Header & Title */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-5">
         <div>
@@ -426,6 +543,15 @@ export function AuditTrailViewer({ logs }: AuditTrailViewerProps) {
           </tbody>
         </table>
       </div>
+        </>
+      )}
+
+      {inspectingFile && (
+        <HistoricalFileViewerModal
+          fileRecord={inspectingFile}
+          onClose={() => setInspectingFile(null)}
+        />
+      )}
     </div>
   );
 }

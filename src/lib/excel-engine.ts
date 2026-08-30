@@ -405,6 +405,116 @@ export async function exportTransactionSheetsPerProduct(
   });
 }
 
+/**
+ * Packages each fund into its own separate standalone Excel file (.xlsx) with yellow headers,
+ * and bundles all files into a single ZIP archive (.zip).
+ * For T0 funds, both Value and Quantity are fully preserved (بيانات كاملة).
+ */
+export async function exportAllFundsAsZip(
+  rows: GeneratedTransactionRow[],
+  forceCompleteData: boolean = false
+): Promise<Blob> {
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+
+  const productMap = new Map<string, GeneratedTransactionRow[]>();
+  for (const row of rows) {
+    const prod = row.productName.trim() || 'Uncategorized';
+    if (!productMap.has(prod)) {
+      productMap.set(prod, []);
+    }
+    productMap.get(prod)!.push(row);
+  }
+
+  const sortedProducts = Array.from(productMap.keys()).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' })
+  );
+
+  const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FF000000' } },
+    bottom: { style: 'thin', color: { argb: 'FF000000' } },
+    left: { style: 'thin', color: { argb: 'FF000000' } },
+    right: { style: 'thin', color: { argb: 'FF000000' } },
+  };
+
+  for (const prodKey of sortedProducts) {
+    const fundRows = productMap.get(prodKey) || [];
+    if (fundRows.length === 0) continue;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Investment Management Platform';
+    const safeSheetName = prodKey.substring(0, 31).replace(/[\/*?:[\]]/g, '_');
+    const ws = workbook.addWorksheet(safeSheetName);
+    ws.views = [{ showGridLines: true }];
+
+    ws.columns = [
+      { header: 'Transaction ID', key: 'transactionId', width: 22 },
+      { header: 'Transaction Type', key: 'transactionType', width: 16 },
+      { header: 'Transaction Date', key: 'transactionDate', width: 16 },
+      { header: 'External Code', key: 'externalCode', width: 18 },
+      { header: 'Name', key: 'name', width: 34 },
+      { header: 'Transaction Value', key: 'transactionValue', width: 20 },
+      { header: 'Qty', key: 'qty', width: 14 },
+      { header: 'Branch ID', key: 'branchId', width: 12 },
+      { header: 'Value Date', key: 'valueDate', width: 16 },
+      { header: 'IC Price', key: 'icPrice', width: 14 },
+      { header: 'Fees', key: 'fees', width: 10 },
+    ];
+
+    const headerRow = ws.getRow(1);
+    headerRow.height = 24;
+    headerRow.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF000000' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; // Vivid Yellow
+    headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+    headerRow.eachCell((cell) => { cell.border = thinBorder; });
+
+    for (const item of fundRows) {
+      const val = item.transactionValue !== null
+        ? item.transactionValue
+        : (forceCompleteData && item.qty !== null && item.icPrice ? item.qty * item.icPrice : '');
+
+      const quantity = item.qty !== null
+        ? item.qty
+        : (forceCompleteData && item.transactionValue !== null && item.icPrice ? item.transactionValue / item.icPrice : '');
+
+      const addedRow = ws.addRow({
+        transactionId: item.transactionId,
+        transactionType: item.transactionType.toLowerCase(),
+        transactionDate: item.transactionDate,
+        externalCode: item.externalCode,
+        name: item.name,
+        transactionValue: val,
+        qty: quantity,
+        branchId: item.branchId,
+        valueDate: item.valueDate,
+        icPrice: item.icPrice,
+        fees: item.fees,
+      });
+
+      addedRow.eachCell((cell, colNumber) => {
+        cell.border = thinBorder;
+        cell.font = { name: 'Calibri', size: 10 };
+        if ([1, 2, 3, 4, 8, 9, 11].includes(colNumber)) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else if ([6, 7, 10].includes(colNumber)) {
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          if (colNumber === 6 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+          if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0';
+          if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+      });
+    }
+
+    const fileBuffer = await workbook.xlsx.writeBuffer();
+    const safeFileName = prodKey.replace(/[^a-zA-Z0-9_\u0600-\u06FF\s-]/g, '').trim().replace(/\s+/g, '_') || 'Fund';
+    zip.file(`${safeFileName}.xlsx`, fileBuffer);
+  }
+
+  return await zip.generateAsync({ type: 'blob' });
+}
+
 export async function exportNettingSheet(
   nettingRows: NettingRow[],
   totalBuy: number,

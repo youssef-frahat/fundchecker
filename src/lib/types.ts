@@ -125,7 +125,8 @@ export interface UploadedFileRecord {
   uploadedBy: string;
   uploadedByName: string;
   uploadedAt: string;
-  status: 'PROCESSING' | 'PARSED' | 'EXCEPTION' | 'APPROVED' | 'ARCHIVED';
+  fileCategory?: 'ORDERS' | 'ALLOCATION';
+  status: 'PROCESSING' | 'PARSED' | 'EXCEPTION' | 'FAILED' | 'APPROVED' | 'ARCHIVED';
 }
 
 export interface ExceptionRecord {
