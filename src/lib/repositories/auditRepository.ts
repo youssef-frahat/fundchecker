@@ -6,6 +6,10 @@ import { AuditLog } from '../types';
 export async function insertAuditLog(log: AuditLog): Promise<void> {
   try {
     const supabase = await getDbClient();
+    const newVals = {
+      ...(log.newValues || {}),
+      userName: log.userName,
+    };
     const { error } = await supabase.from('audit_logs').insert([
       {
         user_id: log.userId && log.userId.includes('-') ? log.userId : null,
@@ -13,7 +17,7 @@ export async function insertAuditLog(log: AuditLog): Promise<void> {
         entity_name: log.entityName,
         entity_id: log.entityId && log.entityId.includes('-') ? log.entityId : null,
         old_values: log.oldValues || null,
-        new_values: log.newValues || null,
+        new_values: newVals,
         ip_address: log.ipAddress || '127.0.0.1',
         created_at: log.timestampUtc || new Date().toISOString(),
       },
@@ -36,7 +40,10 @@ export async function insertAuditLogsBatch(logs: AuditLog[]): Promise<void> {
     entity_name: log.entityName,
     entity_id: log.entityId && log.entityId.includes('-') ? log.entityId : null,
     old_values: log.oldValues || null,
-    new_values: log.newValues || null,
+    new_values: {
+      ...(log.newValues || {}),
+      userName: log.userName,
+    },
     ip_address: log.ipAddress || '127.0.0.1',
     created_at: log.timestampUtc || new Date().toISOString(),
   }));
