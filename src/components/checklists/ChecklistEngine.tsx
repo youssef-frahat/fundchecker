@@ -175,12 +175,22 @@ export function ChecklistEngine({
                     {/* Digital Checkbox */}
                     <button
                       disabled={item.isApproved || (isMissedDeadline && currentRole !== 'SUPER_ADMIN')}
-                      onClick={() => onToggleComplete(item.id, !item.isCompleted)}
+                      onClick={() => {
+                        if (isMissedDeadline) {
+                          if (currentRole === 'SUPER_ADMIN') {
+                            setLateResolutionModal(item);
+                          }
+                          return;
+                        }
+                        onToggleComplete(item.id, !item.isCompleted);
+                      }}
                       title={
                         item.isApproved
                           ? 'مقفل نهائياً بعد اعتماد السوبر أدمن'
-                          : isMissedDeadline && currentRole !== 'SUPER_ADMIN'
-                          ? '🔒 مقفل لتجاوز الديدلاين - يتطلب تدخلاً استثنائياً من السوبر أدمن'
+                          : isMissedDeadline
+                          ? currentRole === 'SUPER_ADMIN'
+                            ? 'انقر لفتح نافذة المعالجة الاستثنائية وكتابة السبب الإلزامي'
+                            : '🔒 مقفل لتجاوز موعد الديدلاين للمنفذين'
                           : item.isCompleted
                           ? 'انقر هنا للتراجع عن علامة الصح (Undo)'
                           : 'انقر للتأكيد والتنفيذ'
@@ -190,10 +200,10 @@ export function ChecklistEngine({
                           ? 'bg-emerald-700 text-white cursor-not-allowed shadow-xs'
                           : item.isCompleted
                           ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
-                          : isMissedDeadline && currentRole !== 'SUPER_ADMIN'
-                          ? 'bg-rose-100 border-2 border-rose-400 text-rose-500 cursor-not-allowed'
                           : isMissedDeadline
-                          ? 'bg-white border-2 border-rose-500 text-transparent hover:bg-rose-50'
+                          ? currentRole === 'SUPER_ADMIN'
+                            ? 'bg-rose-50 border-2 border-rose-500 text-rose-500 hover:bg-rose-100 cursor-pointer shadow-xs'
+                            : 'bg-rose-100 border-2 border-rose-400 text-rose-500 cursor-not-allowed'
                           : 'bg-white border border-slate-300 hover:border-emerald-600 text-transparent'
                       }`}
                     >
@@ -298,6 +308,16 @@ export function ChecklistEngine({
                         <div className="mt-2 text-[11px] text-rose-800 bg-rose-100/70 border border-rose-300 p-2 rounded-lg font-mono flex items-center gap-2">
                           <Lock className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                           <span>انتهت المهلة المحددة للمنفذين. تم قفل المهمة ولا يمكن التأكيد إلا بتدخل استثنائي من السوبر أدمن.</span>
+                        </div>
+                      )}
+
+                      {/* Super Admin Guidance Notice if Past Cutoff */}
+                      {isMissedDeadline && !item.isCompleted && currentRole === 'SUPER_ADMIN' && (
+                        <div className="mt-2 text-[11px] text-rose-950 bg-rose-100/80 border border-rose-300 p-2.5 rounded-lg font-mono flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>تجاوزت هذه المهمة موعد الديدلاين ({item.dueTime}). مربع التأكيد المباشر مقفل، ويجب الضغط على زر &quot;معالجة استثنائية&quot; لكتابة المبرر التشغيلي الإلزامي.</span>
+                          </div>
                         </div>
                       )}
 
