@@ -180,6 +180,8 @@ CREATE TABLE IF NOT EXISTS public.reference_data (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
+ALTER TABLE public.reference_data ADD COLUMN IF NOT EXISTS fund_type VARCHAR(10) NOT NULL DEFAULT 'T0';
+
 -- Core Reference Data Seed
 INSERT INTO public.reference_data (symbol_code, symbol_name, actual_symbol, email_contact, nav_unit_price, fund_type) VALUES
 ('1006', 'Aafaq Investment Fund', 'AFAC', 'Afaq Fund', 264.2139, 'T0'),
@@ -227,6 +229,9 @@ CREATE TABLE IF NOT EXISTS public.uploaded_files (
     uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
     status VARCHAR(30) NOT NULL DEFAULT 'PROCESSING' CHECK (status IN ('PROCESSING', 'PARSED', 'EXCEPTION', 'FAILED'))
 );
+
+ALTER TABLE public.uploaded_files ADD COLUMN IF NOT EXISTS file_category VARCHAR(30) NOT NULL DEFAULT 'ORDERS';
+ALTER TABLE public.uploaded_files ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'PROCESSING';
 
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_hash ON public.uploaded_files(file_hash_sha256);
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_created ON public.uploaded_files(uploaded_at DESC);
@@ -293,6 +298,9 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS user_name VARCHAR(255);
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(45);
+
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON public.audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action);
 
@@ -320,9 +328,28 @@ CREATE TABLE IF NOT EXISTS public.checklists (
     reopened_at TIMESTAMP WITH TIME ZONE,
     reopen_reason TEXT,
     status VARCHAR(20) DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'ARCHIVED')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
-    CONSTRAINT uq_checklist_code UNIQUE (checklist_code)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
+
+-- Ensure all approval & reopening columns exist even if table pre-existed
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS approved_by VARCHAR(255);
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS approved_by_name VARCHAR(255);
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS reopened_by VARCHAR(255);
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS reopened_by_name VARCHAR(255);
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS reopen_reason TEXT;
+
+-- Ensure unique constraint on checklist_code for upsert idempotency
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_checklist_code'
+    ) THEN
+        ALTER TABLE public.checklists ADD CONSTRAINT uq_checklist_code UNIQUE (checklist_code);
+    END IF;
+END $$;
 
 -- Seed the 7 Egyptian Mutual Fund Operational Steps (English Titles + Arabic Descriptions)
 INSERT INTO public.checklists (checklist_code, title, description, due_time, priority, mandatory, is_completed, is_approved) VALUES
@@ -362,6 +389,12 @@ CREATE TABLE IF NOT EXISTS public.transfer_sheet_batches (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
+
+ALTER TABLE public.transfer_sheet_batches ADD COLUMN IF NOT EXISTS maker_id VARCHAR(255);
+ALTER TABLE public.transfer_sheet_batches ADD COLUMN IF NOT EXISTS maker_name VARCHAR(255);
+ALTER TABLE public.transfer_sheet_batches ADD COLUMN IF NOT EXISTS checker_id VARCHAR(255);
+ALTER TABLE public.transfer_sheet_batches ADD COLUMN IF NOT EXISTS checker_name VARCHAR(255);
+ALTER TABLE public.transfer_sheet_batches ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 
 -- ==============================================================================
 -- 12. CASH NETTING LINES
