@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   FileSpreadsheet,
-  Activity,
   Layers,
   Database,
   Lock,

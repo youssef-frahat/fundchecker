@@ -3,10 +3,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Layers, FileSpreadsheet, Clock } from 'lucide-react';
+import { Layers, FileSpreadsheet } from 'lucide-react';
 import { Navbar } from '@/components/layout/Navbar';
 import { LoginForm } from '@/components/auth/LoginForm';
-import { OverviewCards } from '@/components/dashboard/OverviewCards';
 import { FileUploader } from '@/components/ingestion/FileUploader';
 import { TransactionReportTable } from '@/components/reports/TransactionReportTable';
 import { TransferSheetView } from '@/components/netting/TransferSheetView';
