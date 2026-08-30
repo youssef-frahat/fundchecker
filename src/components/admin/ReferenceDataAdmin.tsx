@@ -204,11 +204,11 @@ export function ReferenceDataAdmin({
                 <td className="p-3 text-xs text-slate-600">
                   {row.fundType === 'T1' ? (
                     <span className="text-[11px] text-blue-800 font-medium">
-                      T1: Buy Value Visible (Qty Blank) | Sell Qty Visible
+                      T1: الشراء (قيمة فقط) | البيع (كمية فقط)
                     </span>
                   ) : (
                     <span className="text-[11px] text-emerald-800 font-medium">
-                      T0: Full Value &amp; Quantity Visible (Both Sides)
+                      T0: بيانات كاملة (قيمة وكمية معاً)
                     </span>
                   )}
                 </td>
@@ -324,11 +324,14 @@ export function ReferenceDataAdmin({
                     onChange={(e) => setNewFundType(e.target.value as SettlementType)}
                     className="w-full bg-white border-2 border-emerald-600 rounded-xl p-2.5 text-emerald-950 font-bold focus:outline-none"
                   >
-                    <option value="T0">T0 — Money Market / Cash</option>
-                    <option value="T1">T1 — Equity / Stocks</option>
-                    <option value="T2">T2 — Extended Settlement</option>
-                    <option value="DVP">DVP — Delivery Versus Payment</option>
+                    <option value="T0">T0 — Money Market (صناديق نقدية / يومية)</option>
+                    <option value="T1">T1 — Equity / Stocks (صناديق أسهم / استثمار)</option>
                   </select>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {newFundType === 'T1'
+                      ? '⚡ T1: في الشراء تظهر القيمة فقط (الكمية فارغة) | في البيع تظهر الكمية فقط'
+                      : '⚡ T0: تظهر القيمة والكمية كاملة للبيع والشراء في شيت الإكسل'}
+                  </p>
                 </div>
 
                 <div>
@@ -439,17 +442,20 @@ export function ReferenceDataAdmin({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Settlement Type</label>
+                  <label className="block text-slate-700 font-semibold mb-1">Settlement Type *</label>
                   <select
                     value={editingFund.fundType || 'T0'}
                     onChange={(e) => setEditingFund({ ...editingFund, fundType: e.target.value as SettlementType })}
                     className="w-full bg-white border-2 border-emerald-600 rounded-xl p-2.5 text-emerald-950 font-bold focus:outline-none"
                   >
-                    <option value="T0">T0 — Money Market / Cash</option>
-                    <option value="T1">T1 — Equity / Stocks</option>
-                    <option value="T2">T2 — Extended Settlement</option>
-                    <option value="DVP">DVP — Delivery Versus Payment</option>
+                    <option value="T0">T0 — Money Market (صناديق نقدية / يومية)</option>
+                    <option value="T1">T1 — Equity / Stocks (صناديق أسهم / استثمار)</option>
                   </select>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {editingFund.fundType === 'T1'
+                      ? '⚡ T1: في الشراء تظهر القيمة فقط (الكمية فارغة) | في البيع تظهر الكمية فقط'
+                      : '⚡ T0: تظهر القيمة والكمية كاملة للبيع والشراء في شيت الإكسل'}
+                  </p>
                 </div>
 
                 <div>
