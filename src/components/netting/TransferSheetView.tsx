@@ -21,6 +21,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { AdjustmentCategory, NettingRow, TransferSheetBatch, TransferSheetLine, UserRole } from '@/lib/types';
+import { exportTransferSheetBatchExcel } from '@/lib/excel-engine';
 
 interface TransferSheetViewProps {
   nettingRows: NettingRow[];
@@ -175,6 +176,28 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
   const totalAdjustments = activeLines.reduce((acc, l) => acc + (l.adjustmentAmount || 0), 0);
   const totalFinalTransfer = totalNet + totalAdjustments;
 
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+
+  const handleExportExcel = async () => {
+    try {
+      setIsExportingExcel(true);
+      const blob = await exportTransferSheetBatchExcel(activeLines, batch?.batchNumber);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateStr = new Date().toISOString().split('T')[0];
+      a.download = `Transfer_Netting_Sheet_${batch?.batchNumber || 'Export'}_${dateStr}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export formatted netting excel:', err);
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header & Controls */}
@@ -210,8 +233,19 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Export button */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* User Requested: Formatted Excel Export matching UI red/green styling */}
+          <button
+            onClick={handleExportExcel}
+            disabled={isExportingExcel || activeLines.length === 0}
+            className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl shadow-xs transition"
+            title="Download Formatted Excel with Red (Transfer) and Green (Receive) indicators"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            {isExportingExcel ? 'Generating Excel...' : 'Export Excel (.xlsx)'}
+          </button>
+
+          {/* Export CSV button */}
           <button
             onClick={() => {
               const csvContent =
@@ -232,10 +266,10 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
               link.click();
               document.body.removeChild(link);
             }}
-            className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 shadow-xs transition"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 shadow-xs transition"
           >
-            <Download className="w-4 h-4 text-slate-500" />
-            Export CSV
+            <Download className="w-3.5 h-3.5 text-slate-500" />
+            CSV
           </button>
 
           {!isLocked && (

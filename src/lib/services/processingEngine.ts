@@ -15,7 +15,7 @@ import { validateTradeFile, FileValidationResult } from './validationService';
 import { mapTransactionsToReferenceData, MappingBatchResult } from './mappingService';
 import { evaluateFundRuleForRow } from './ruleService';
 import { generateFundTransactions, TransactionGeneratorResult } from './transactionGenerator';
-import { generateTransferSheet, TransferGeneratorResult } from './transferGenerator';
+import { TransferGeneratorResult } from './transferGenerator';
 
 export interface RowTraceabilityItem {
   rowId: string;
@@ -51,7 +51,7 @@ export interface ProcessingPipelineReport {
   unmappedRowsCount: number;
   exceptionsCount: number;
   transactionGeneratorResult: TransactionGeneratorResult;
-  transferGeneratorResult: TransferGeneratorResult;
+  transferGeneratorResult?: TransferGeneratorResult;
   auditLogsCount: number;
   traceabilityLog: RowTraceabilityItem[];
   exceptions: ExceptionRecord[];
@@ -190,10 +190,7 @@ export async function executeProcessingPipeline(
     // 7. Transaction File Generator (produces Excel + storage upload)
     const txGenResult = await generateFundTransactions(fileId, generatedRows, userId);
 
-    // 8. Transfer Sheet Generator (netting engine using net_settle)
-    const transferGenResult = await generateTransferSheet(fileId, preparedRows, referenceDataList, userId);
-
-    // 9. Persist Exception Records
+    // 8. Persist Exception Records
     if (allExceptions.length > 0) {
       await insertExceptionsBatch(allExceptions);
       await updateUploadedFileStatus(fileId, 'EXCEPTION');
@@ -201,7 +198,7 @@ export async function executeProcessingPipeline(
       await updateUploadedFileStatus(fileId, 'PARSED');
     }
 
-    // 10. Audit Log: Pipeline Completed
+    // 9. Audit Log: Pipeline Completed
     await insertAuditLog({
       id: crypto.randomUUID(),
       userId,
@@ -219,11 +216,7 @@ export async function executeProcessingPipeline(
         mappedRows: mappingResult.mappedRows.filter((m) => m.isMapped).length,
         unmappedRows: mappingResult.unmappedCount,
         exceptionsCount: allExceptions.length,
-        totalBuy: transferGenResult.nettingSummary.totalBuy,
-        totalSell: transferGenResult.nettingSummary.totalSell,
-        totalNet: transferGenResult.nettingSummary.totalNet,
         reportId: txGenResult.reportId,
-        transferSheetId: transferGenResult.transferSheetId,
       },
     });
 
@@ -240,7 +233,6 @@ export async function executeProcessingPipeline(
       unmappedRowsCount: mappingResult.unmappedCount,
       exceptionsCount: allExceptions.length,
       transactionGeneratorResult: txGenResult,
-      transferGeneratorResult: transferGenResult,
       auditLogsCount: 2,
       traceabilityLog,
       exceptions: allExceptions,

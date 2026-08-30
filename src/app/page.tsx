@@ -58,7 +58,7 @@ import {
 } from '@/app/actions/userActions';
 import { getCurrentSessionUserAction, logoutUserAction } from '@/app/actions/authActions';
 import { applyFundRules } from '@/lib/rule-engine';
-import { calculateNettingSheet, FundReviewState } from '@/lib/netting-engine';
+import { FundReviewState } from '@/lib/netting-engine';
 import { TransferSheetBatch } from '@/lib/types';
 
 export default function InvestmentPlatformPage() {
@@ -141,16 +141,13 @@ export default function InvestmentPlatformPage() {
         return;
       }
       setCurrentTransferBatch(allocResult.batch);
-      setRawTransactions([]); // Clear raw orders so that Netting View is driven strictly by the new allocation batch
-      setActiveTab('netting'); // Automatically navigate to Transfer Netting Sheet
       const freshLogs = await fetchAuditLogsAction();
       setAuditLogs(freshLogs);
       return;
     }
 
-    // Otherwise: Standard Orders File pipeline for Transaction Reports
+    // Otherwise: Standard Orders File pipeline for Transaction Reports (completely decoupled from netting)
     setRawTransactions(parsedRows);
-    setCurrentTransferBatch(null);
 
     // Execute Production Processing Engine via Server Action
     const result = await processTradeFileAction(
@@ -248,8 +245,6 @@ export default function InvestmentPlatformPage() {
     : [];
 
 
-  const nettingSummary = calculateNettingSheet(rawTransactions, referenceDataList, 'symbol', perFundReviewStates);
-
   const effectiveNettingRows: NettingRow[] = currentTransferBatch?.lines && currentTransferBatch.lines.length > 0
     ? currentTransferBatch.lines.map((l) => ({
         symbolCode: l.symbolCode,
@@ -266,11 +261,11 @@ export default function InvestmentPlatformPage() {
           ? 'UNDER_REVIEW'
           : 'DRAFT') as 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED',
       }))
-    : nettingSummary.rows;
+    : [];
 
-  const effectiveTotalBuy = currentTransferBatch ? currentTransferBatch.totalBuyAmount : nettingSummary.totalBuy;
-  const effectiveTotalSell = currentTransferBatch ? currentTransferBatch.totalSellAmount : nettingSummary.totalSell;
-  const effectiveTotalNet = currentTransferBatch ? currentTransferBatch.totalNetAmount : nettingSummary.totalNet;
+  const effectiveTotalBuy = currentTransferBatch ? currentTransferBatch.totalBuyAmount : 0;
+  const effectiveTotalSell = currentTransferBatch ? currentTransferBatch.totalSellAmount : 0;
+  const effectiveTotalNet = currentTransferBatch ? currentTransferBatch.totalNetAmount : 0;
 
   const handleMakerSubmit = async () => {
     if (currentTransferBatch) {
