@@ -20,6 +20,8 @@ interface ChecklistEngineProps {
   currentRole: UserRole;
   onToggleComplete: (itemId: string, nextStatus: boolean) => void;
   onApproveItem?: (itemId: string) => void;
+  onResolveLateItem?: (itemId: string, resolution: 'RESOLVED' | 'BREACHED', reason: string) => void;
+  onResetDailyShift?: () => void;
   onReopenItem: (itemId: string, reason: string) => void;
 }
 
@@ -28,10 +30,16 @@ export function ChecklistEngine({
   currentRole,
   onToggleComplete,
   onApproveItem,
+  onResolveLateItem,
+  onResetDailyShift,
   onReopenItem,
 }: ChecklistEngineProps) {
   const [reopenModal, setReopenModal] = useState<ChecklistItem | null>(null);
   const [reopenReason, setReopenReason] = useState('');
+  const [lateResolutionModal, setLateResolutionModal] = useState<ChecklistItem | null>(null);
+  const [lateResolutionType, setLateResolutionType] = useState<'RESOLVED' | 'BREACHED'>('RESOLVED');
+  const [lateResolutionReason, setLateResolutionReason] = useState('');
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
   const [cairoMinutes, setCairoMinutes] = useState<number>(0);
 
   // Keep Cairo time in sync every 30 seconds
@@ -56,6 +64,20 @@ export function ChecklistEngine({
     onReopenItem(reopenModal.id, reopenReason.trim());
     setReopenModal(null);
     setReopenReason('');
+  };
+
+  const handleConfirmLateResolution = () => {
+    if (!lateResolutionModal || !lateResolutionReason.trim() || !onResolveLateItem) return;
+    onResolveLateItem(lateResolutionModal.id, lateResolutionType, lateResolutionReason.trim());
+    setLateResolutionModal(null);
+    setLateResolutionReason('');
+    setLateResolutionType('RESOLVED');
+  };
+
+  const handleConfirmResetDailyShift = () => {
+    if (!onResetDailyShift) return;
+    onResetDailyShift();
+    setShowResetConfirmModal(false);
   };
 
   const parseCutoffMinutes = (timeStr?: string): number => {
@@ -91,11 +113,11 @@ export function ChecklistEngine({
             </h3>
           </div>
           <p className="text-xs text-slate-600 mt-1">
-            المنفذ يقوم بالتنفيذ والتراجع بحرية قبل الاعتماد. عند اعتماد السوبر أدمن، تقفل المهمة نهائياً ويتم توثيق التوقيعين.
+            المنفذ ينفذ المهام حتى الديدلاين. بعد الديدلاين تُقفل للمنفذين وتتطلب تدخلاً استثنائياً من السوبر أدمن. تبدأ دورة اليوم تلقائياً 6:00 صباحاً.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           <div className="text-xs font-mono text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
             <span>المنجز: </span>
             <span className="text-emerald-700 font-bold">
@@ -108,6 +130,18 @@ export function ChecklistEngine({
               {approvedCount} / {items.length}
             </span>
           </div>
+
+          {/* Super Admin Reset Day Shift Button */}
+          {currentRole === 'SUPER_ADMIN' && onResetDailyShift && (
+            <button
+              onClick={() => setShowResetConfirmModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition shadow-2xs"
+              title="تصفير الشيك ليست وبدء يوم تشغيلي جديد"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+              <span>بدء وردية جديدة</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -140,11 +174,13 @@ export function ChecklistEngine({
                   <div className="flex items-start gap-3 flex-1">
                     {/* Digital Checkbox */}
                     <button
-                      disabled={item.isApproved}
+                      disabled={item.isApproved || (isMissedDeadline && currentRole !== 'SUPER_ADMIN')}
                       onClick={() => onToggleComplete(item.id, !item.isCompleted)}
                       title={
                         item.isApproved
                           ? 'مقفل نهائياً بعد اعتماد السوبر أدمن'
+                          : isMissedDeadline && currentRole !== 'SUPER_ADMIN'
+                          ? '🔒 مقفل لتجاوز الديدلاين - يتطلب تدخلاً استثنائياً من السوبر أدمن'
                           : item.isCompleted
                           ? 'انقر هنا للتراجع عن علامة الصح (Undo)'
                           : 'انقر للتأكيد والتنفيذ'
@@ -154,6 +190,8 @@ export function ChecklistEngine({
                           ? 'bg-emerald-700 text-white cursor-not-allowed shadow-xs'
                           : item.isCompleted
                           ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
+                          : isMissedDeadline && currentRole !== 'SUPER_ADMIN'
+                          ? 'bg-rose-100 border-2 border-rose-400 text-rose-500 cursor-not-allowed'
                           : isMissedDeadline
                           ? 'bg-white border-2 border-rose-500 text-transparent hover:bg-rose-50'
                           : 'bg-white border border-slate-300 hover:border-emerald-600 text-transparent'
@@ -212,7 +250,21 @@ export function ChecklistEngine({
                           </span>
                         )}
 
-                        {/* Status Badges */}
+                        {/* Late Resolved / Breached Status Badges */}
+                        {item.status === 'LATE_RESOLVED' && (
+                          <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            معالجة متأخرة معتمدة (Late Override)
+                          </span>
+                        )}
+                        {item.status === 'BREACHED' && (
+                          <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-white" />
+                            مخالفة عدم تنفيذ مسجلة (Breached)
+                          </span>
+                        )}
+
+                        {/* Standard Status Badges */}
                         {item.isApproved ? (
                           <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
                             <Lock className="w-3 h-3 text-emerald-700" /> معتمد ومقفل نهائياً
@@ -238,6 +290,14 @@ export function ChecklistEngine({
                         >
                           <span className="font-bold text-slate-900 ml-1">الوصف التشغيلي:</span>
                           <span>{item.description}</span>
+                        </div>
+                      )}
+
+                      {/* Operator Locked Notice if Past Cutoff */}
+                      {isMissedDeadline && !item.isCompleted && currentRole !== 'SUPER_ADMIN' && (
+                        <div className="mt-2 text-[11px] text-rose-800 bg-rose-100/70 border border-rose-300 p-2 rounded-lg font-mono flex items-center gap-2">
+                          <Lock className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span>انتهت المهلة المحددة للمنفذين. تم قفل المهمة ولا يمكن التأكيد إلا بتدخل استثنائي من السوبر أدمن.</span>
                         </div>
                       )}
 
@@ -298,9 +358,21 @@ export function ChecklistEngine({
                     </div>
                   </div>
 
-                  {/* Actions Column: Approve or Reopen */}
+                  {/* Actions Column: Approve, Late Override, Undo, or Reopen */}
                   <div className="flex items-center gap-2 shrink-0">
-                    {/* Super Admin Approve & Lock Button */}
+                    {/* Super Admin Late Resolution Override Button */}
+                    {isMissedDeadline && !item.isCompleted && currentRole === 'SUPER_ADMIN' && onResolveLateItem && (
+                      <button
+                        onClick={() => setLateResolutionModal(item)}
+                        className="bg-rose-600 hover:bg-rose-700 text-white shadow-xs px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0"
+                        title="معالجة استثنائية بعد تجاوز الديدلاين"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>معالجة استثنائية</span>
+                      </button>
+                    )}
+
+                    {/* Super Admin Standard Approve & Lock Button */}
                     {item.isCompleted && !item.isApproved && currentRole === 'SUPER_ADMIN' && onApproveItem && (
                       <button
                         onClick={() => onApproveItem(item.id)}
@@ -342,6 +414,119 @@ export function ChecklistEngine({
           })
         )}
       </div>
+
+      {/* Super Admin Late Resolution Modal */}
+      {lateResolutionModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-rose-200 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-700">
+              <div className="p-3 bg-rose-50 rounded-xl border border-rose-200">
+                <AlertTriangle className="w-6 h-6 text-rose-600" />
+              </div>
+              <div>
+                <h4 className="font-bold text-base text-slate-900">معالجة استثنائية بعد الديدلاين (Super Admin)</h4>
+                <p className="text-xs text-rose-600">موعد الإقفال: {lateResolutionModal.dueTime}</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800">
+              المهمة: &quot;{lateResolutionModal.title}&quot;
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700">نوع الإجراء الرقابي:</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLateResolutionType('RESOLVED')}
+                  className={`p-2.5 rounded-xl text-xs font-bold border text-center transition ${
+                    lateResolutionType === 'RESOLVED'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  ✅ تم الحل والتنفيذ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLateResolutionType('BREACHED')}
+                  className={`p-2.5 rounded-xl text-xs font-bold border text-center transition ${
+                    lateResolutionType === 'BREACHED'
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  ❌ تسجيل مخالفة عدم تنفيذ
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">سبب التأخير أو مبرر التجاوز (إلزامي للأوديت):</label>
+              <textarea
+                rows={3}
+                placeholder="اكتب التبرير التشغيلي أو سبب عدم التنفيذ في الموعد المحدد..."
+                value={lateResolutionReason}
+                onChange={(e) => setLateResolutionReason(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:border-rose-600"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setLateResolutionModal(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
+              >
+                إلغاء
+              </button>
+              <button
+                disabled={!lateResolutionReason.trim()}
+                onClick={handleConfirmLateResolution}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-50 shadow-md shadow-rose-600/20"
+              >
+                تأكيد المعالجة وتوثيق الأوديت
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Super Admin Reset Shift Modal */}
+      {showResetConfirmModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-slate-800">
+              <div className="p-3 bg-slate-100 rounded-xl border border-slate-200">
+                <RotateCcw className="w-6 h-6 text-slate-700" />
+              </div>
+              <div>
+                <h4 className="font-bold text-base text-slate-900">بدء وردية عمل جديدة (Shift Reset)</h4>
+                <p className="text-xs text-slate-600">تصفير الشيك ليست لليوم التشغيلي الجديد</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              هل أنت متأكد من تصفير حالة المهام لجميع الصناديق وبدء وردية عمل جديدة؟
+              سيتم حفظ جميع الحركات والتوقيعات السابقة في سجل الأوديت بالكامل.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowResetConfirmModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleConfirmResetDailyShift}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-900/20"
+              >
+                تأكيد بدء الوردية الجديدة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Super Admin Reopen Modal */}
       {reopenModal && (

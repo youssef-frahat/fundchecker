@@ -3,6 +3,30 @@
 import { getDbClient } from '../db-client';
 import { ChecklistItem } from '../types';
 
+// Helper: Determines current Cairo daily operational shift date (Shift begins at 06:00 AM)
+const isFromCurrentCairoShift = (timestampStr?: string): boolean => {
+  if (!timestampStr) return true;
+  const d = new Date(timestampStr);
+  const now = new Date();
+
+  // Current Cairo Date & Hour
+  const cairoNowDate = now.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  const cairoNowHour = parseInt(
+    now.toLocaleTimeString('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', hour12: false }),
+    10
+  );
+
+  // If before 6 AM, current shift belongs to yesterday's date
+  let currentShiftDate = cairoNowDate;
+  if (cairoNowHour < 6) {
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    currentShiftDate = yesterday.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  }
+
+  const dDate = d.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  return dDate === currentShiftDate;
+};
+
 export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
   try {
     const supabase = await getDbClient();
@@ -22,7 +46,7 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
     for (const item of data) {
       const code = String(item.checklist_code || 'CHK-01');
       const completedAtStr = item.completed_at ? String(item.completed_at) : undefined;
-      const isCompleted = Boolean(item.is_completed);
+      const isCompleted = Boolean(item.is_completed) && isFromCurrentCairoShift(completedAtStr);
 
       // Determine approval status (supports dedicated column or status/reopen fallback)
       const hasReopenedApproved = item.reopened_by_name && String(item.reopened_by_name).startsWith('APPROVED_BY:');
@@ -98,6 +122,55 @@ export async function resetDailyChecklistsInDb(): Promise<void> {
       .neq('id', '00000000-0000-0000-0000-000000000000');
   } catch (err) {
     console.warn('Manual shift reset notice:', err);
+  }
+}
+
+export async function resolveLateChecklistItemInDb(
+  id: string,
+  resolution: 'RESOLVED' | 'BREACHED',
+  reason: string,
+  userEmail: string,
+  userName: string,
+  userId?: string
+): Promise<void> {
+  try {
+    const supabase = await getDbClient();
+    const resolvedUuid = userId && UUID_REGEX.test(userId)
+      ? userId
+      : userEmail && UUID_REGEX.test(userEmail)
+      ? userEmail
+      : null;
+
+    const now = new Date().toISOString();
+    const approverName = userName || userEmail;
+
+    const payload = resolution === 'RESOLVED'
+      ? {
+          is_completed: true,
+          status: 'LATE_RESOLVED',
+          completed_by: resolvedUuid,
+          completed_by_name: `${approverName} (Late Override)`,
+          completed_at: now,
+          reopened_by_name: `APPROVED_BY: ${approverName}`,
+          reopened_at: now,
+          reopen_reason: reason,
+        }
+      : {
+          is_completed: false,
+          status: 'BREACHED',
+          reopened_by: resolvedUuid,
+          reopened_by_name: approverName,
+          reopened_at: now,
+          reopen_reason: reason,
+        };
+
+    if (UUID_REGEX.test(id)) {
+      await supabase.from('checklists').update(payload).eq('id', id);
+    } else {
+      await supabase.from('checklists').update(payload).eq('checklist_code', id);
+    }
+  } catch (err) {
+    console.warn('Late checklist resolution error:', err);
   }
 }
 

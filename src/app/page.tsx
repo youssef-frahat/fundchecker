@@ -49,6 +49,8 @@ import {
   updateChecklistStatusAction,
   reopenChecklistAction,
   approveChecklistAction,
+  resolveLateChecklistAction,
+  resetDailyChecklistsAction,
   saveAuditLogAction,
   fetchAuditLogsAction,
 } from '@/app/actions/workspaceActions';
@@ -449,6 +451,88 @@ export default function InvestmentPlatformPage() {
     }
   };
 
+  const handleResolveLateChecklist = async (
+    itemId: string,
+    resolution: 'RESOLVED' | 'BREACHED',
+    reason: string
+  ) => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') return;
+    const userEmail = currentUser.email;
+    const userName = currentUser.fullName;
+    const userId = currentUser.id;
+
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === itemId || c.checklistId === itemId
+          ? resolution === 'RESOLVED'
+            ? {
+                ...c,
+                isCompleted: true,
+                isApproved: true,
+                completedByName: `${userName} (Late Override)`,
+                completedAt: new Date().toISOString(),
+                approvedByName: userName,
+                approvedAt: new Date().toISOString(),
+                status: 'LATE_RESOLVED',
+                reopenReason: reason,
+              }
+            : {
+                ...c,
+                isCompleted: false,
+                status: 'BREACHED',
+                reopenReason: reason,
+              }
+          : c
+      )
+    );
+
+    await resolveLateChecklistAction(itemId, resolution, reason, userEmail, userName, userId);
+    addAuditLog('LATE_CHECKLIST_RESOLUTION', 'CHECKLIST_ITEM', itemId, {
+      resolution,
+      reason,
+      operator: userName,
+    });
+
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.checklists) {
+      setChecklists(wsData.checklists);
+    }
+  };
+
+  const handleResetDailyShift = async () => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') return;
+
+    setChecklists((prev) =>
+      prev.map((c) => ({
+        ...c,
+        isCompleted: false,
+        isApproved: false,
+        completedBy: undefined,
+        completedByName: undefined,
+        completedAt: undefined,
+        approvedBy: undefined,
+        approvedByName: undefined,
+        approvedAt: undefined,
+        reopenedBy: undefined,
+        reopenedByName: undefined,
+        reopenedAt: undefined,
+        reopenReason: undefined,
+        status: 'ACTIVE',
+      }))
+    );
+
+    await resetDailyChecklistsAction();
+    addAuditLog('DAILY_SHIFT_RESET', 'CHECKLISTS', 'ALL', {
+      resetBy: currentUser.fullName,
+      shiftStartCairo: new Date().toLocaleTimeString('en-GB', { timeZone: 'Africa/Cairo' }),
+    });
+
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.checklists) {
+      setChecklists(wsData.checklists);
+    }
+  };
+
   const handleResolveException = (id: string) => {
     setExceptions((prev) =>
       prev.map((ex) => (ex.id === id ? { ...ex, status: 'RESOLVED', resolvedAt: new Date().toISOString() } : ex))
@@ -651,6 +735,8 @@ export default function InvestmentPlatformPage() {
             currentRole={currentUser.role}
             onToggleComplete={handleToggleChecklist}
             onApproveItem={handleApproveChecklist}
+            onResolveLateItem={handleResolveLateChecklist}
+            onResetDailyShift={handleResetDailyShift}
             onReopenItem={handleReopenChecklist}
           />
         )}

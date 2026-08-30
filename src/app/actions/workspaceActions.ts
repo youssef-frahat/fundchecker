@@ -97,6 +97,23 @@ export async function approveChecklistAction(
   await approveChecklistItemInDb(id, userEmail, userName, userId);
 }
 
+export async function resolveLateChecklistAction(
+  id: string,
+  resolution: 'RESOLVED' | 'BREACHED',
+  reason: string,
+  userEmail: string,
+  userName: string,
+  userId?: string
+) {
+  const { resolveLateChecklistItemInDb } = await import('@/lib/repositories/checklistRepository');
+  await resolveLateChecklistItemInDb(id, resolution, reason, userEmail, userName, userId);
+}
+
+export async function resetDailyChecklistsAction() {
+  const { resetDailyChecklistsInDb } = await import('@/lib/repositories/checklistRepository');
+  await resetDailyChecklistsInDb();
+}
+
 export async function saveAuditLogAction(log: import('@/lib/types').AuditLog) {
   const { getAuthenticatedServerUser } = await import('@/lib/supabase-server');
   const caller = await getAuthenticatedServerUser();
