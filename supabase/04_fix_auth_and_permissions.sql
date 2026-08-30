@@ -1,15 +1,11 @@
 ﻿-- ====================================================================
--- SUPABASE POSTGRESQL PRODUCTION DDL - PART 4: AUTH & PERMISSIONS FIX
--- Run this in the Supabase SQL Editor to resolve:
--- 1. "Email not confirmed" error for hussien.kamal and all users
--- 2. "Permission denied" errors on checklists, audit_logs, and exceptions
--- 3. Duplicate checklist items (cleans 16 items down to the 4 canonical steps)
+-- SUPABASE POSTGRESQL PRODUCTION DDL - PART 4: AUTH & PERMISSIONS FIX (V2)
 -- ====================================================================
 
 -- 1. AUTO-CONFIRM ALL EXISTING USERS (Instantly unlocks hussien.kamal@mubasher.net)
+-- Note: "confirmed_at" is a generated column in Supabase Auth, only update "email_confirmed_at"
 UPDATE auth.users 
-SET email_confirmed_at = COALESCE(email_confirmed_at, NOW()),
-    confirmed_at = COALESCE(confirmed_at, NOW())
+SET email_confirmed_at = COALESCE(email_confirmed_at, NOW())
 WHERE email_confirmed_at IS NULL;
 
 -- 2. CREATE AUTO-CONFIRM TRIGGER FOR ALL FUTURE USERS
@@ -20,7 +16,6 @@ SECURITY DEFINER
 AS $$
 BEGIN
     NEW.email_confirmed_at := COALESCE(NEW.email_confirmed_at, NOW());
-    NEW.confirmed_at := COALESCE(NEW.confirmed_at, NOW());
     RETURN NEW;
 END;
 $$;
