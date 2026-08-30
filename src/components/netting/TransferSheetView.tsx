@@ -56,6 +56,31 @@ const CATEGORY_LABELS: Record<AdjustmentCategory, string> = {
   OTHER: 'Other',
 };
 
+function formatAccountingUI(val: number) {
+  if (Math.abs(val) < 0.001) {
+    return { text: '-', colorClass: 'text-slate-400 font-mono', inlineColor: 'text-slate-400' };
+  }
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(val));
+
+  if (val < 0) {
+    // Negative -> RED with parentheses (أحمر بالسالب مع أقواس المحاسبة)
+    return {
+      text: `(${formatted})`,
+      colorClass: 'text-rose-700 bg-rose-50 border border-rose-200 font-bold',
+      inlineColor: 'text-rose-700 font-bold',
+    };
+  }
+  // Positive -> GREEN (أخضر بالموجب)
+  return {
+    text: formatted,
+    colorClass: 'text-emerald-700 bg-emerald-50 border border-emerald-200 font-bold',
+    inlineColor: 'text-emerald-700 font-bold',
+  };
+}
+
 export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
   nettingRows,
   totalBuy,
@@ -327,10 +352,10 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
           <p className="text-xs font-bold uppercase tracking-wider text-slate-600">System Net Transfer</p>
           <p
             className={`text-xl font-bold font-mono mt-1 ${
-              totalNet >= 0 ? 'text-emerald-700' : 'text-rose-700'
+              totalNet < 0 ? 'text-rose-700' : 'text-emerald-700'
             }`}
           >
-            {totalNet >= 0 ? `+${formatFinancialNumber(totalNet)}` : formatFinancialNumber(totalNet)}{' '}
+            {formatAccountingUI(totalNet).text}{' '}
             <span className="text-xs font-sans font-normal text-slate-600">EGP</span>
           </p>
           <p className="text-[11px] text-slate-600 mt-1">System Sell - System Buy</p>
@@ -338,14 +363,16 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
 
         <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-4 rounded-xl shadow-xs text-white">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-300">Final Transfer Amount</p>
-          <p className="text-xl font-bold font-mono text-white mt-1">
-            {totalFinalTransfer >= 0
-              ? `+${formatFinancialNumber(totalFinalTransfer)}`
-              : formatFinancialNumber(totalFinalTransfer)}{' '}
+          <p
+            className={`text-xl font-bold font-mono mt-1 ${
+              totalFinalTransfer < 0 ? 'text-rose-400' : 'text-emerald-400'
+            }`}
+          >
+            {formatAccountingUI(totalFinalTransfer).text}{' '}
             <span className="text-xs font-sans font-normal text-slate-400">EGP</span>
           </p>
           <p className="text-[11px] text-amber-300 mt-1">
-            Net + Adjustments ({totalAdjustments >= 0 ? `+${formatFinancialNumber(totalAdjustments)}` : formatFinancialNumber(totalAdjustments)})
+            Net + Adjustments ({formatAccountingUI(totalAdjustments).text})
           </p>
         </div>
       </div>
@@ -392,8 +419,6 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                 </tr>
               ) : (
                 activeLines.map((line) => {
-                  const isPositiveFinal = line.finalTransferAmount >= 0;
-                  const isZeroFinal = line.finalTransferAmount === 0;
                   const hasAdjustment = line.adjustmentAmount !== 0;
 
                   return (
@@ -418,9 +443,15 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                         {formatFinancialNumber(line.systemSellAmount)}
                       </td>
 
-                      {/* 3. System Net (Immutable) */}
-                      <td className="py-3 px-4 text-right font-mono font-semibold text-slate-700">
-                        {formatFinancialNumber(line.systemNetAmount)}
+                      {/* 3. System Net (Immutable) - Accounting Red/Green */}
+                      <td className="py-3 px-4 text-right font-mono">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-xs ${
+                            formatAccountingUI(line.systemNetAmount).colorClass
+                          }`}
+                        >
+                          {formatAccountingUI(line.systemNetAmount).text}
+                        </span>
                       </td>
 
                       {/* 4. Adjustment Amount (Editable with Category) */}
@@ -433,12 +464,12 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                           )}
                           <span
                             className={`font-semibold ${
-                              hasAdjustment ? 'text-amber-700' : 'text-slate-400'
+                              hasAdjustment
+                                ? formatAccountingUI(line.adjustmentAmount).inlineColor
+                                : 'text-slate-400'
                             }`}
                           >
-                            {line.adjustmentAmount !== 0
-                              ? (line.adjustmentAmount > 0 ? `+${formatFinancialNumber(line.adjustmentAmount)}` : formatFinancialNumber(line.adjustmentAmount))
-                              : '0.00'}
+                            {hasAdjustment ? formatAccountingUI(line.adjustmentAmount).text : '0.00'}
                           </span>
 
                           {canEdit && (
@@ -453,18 +484,14 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                         </div>
                       </td>
 
-                      {/* 5. Final Transfer Amount (System Net + Adjustment) */}
+                      {/* 5. Final Transfer Amount (System Net + Adjustment) - Accounting Red/Green */}
                       <td className="py-3 px-4 text-right font-mono font-bold">
                         <span
-                          className={`inline-block px-2 py-0.5 rounded text-xs ${
-                            isZeroFinal
-                              ? 'text-slate-400'
-                              : isPositiveFinal
-                              ? 'text-emerald-700 bg-emerald-50'
-                              : 'text-rose-700 bg-rose-50'
+                          className={`inline-block px-2.5 py-1 rounded text-xs ${
+                            formatAccountingUI(line.finalTransferAmount).colorClass
                           }`}
                         >
-                          {line.finalTransferAmount > 0 ? `+${formatFinancialNumber(line.finalTransferAmount)}` : formatFinancialNumber(line.finalTransferAmount)}
+                          {formatAccountingUI(line.finalTransferAmount).text}
                         </span>
                       </td>
 

@@ -534,6 +534,32 @@ export async function exportAllFundsAsZip(
   return await zip.generateAsync({ type: 'blob' });
 }
 
+const ACCOUNTING_NUM_FMT = '_(* #,##0.00_);_(* (#,##0.00);_(* "-"??_);_(@_)';
+
+function applyAccountingCellStyles(
+  cell: ExcelJS.Cell,
+  val: number,
+  border: Partial<ExcelJS.Borders>,
+  isBold: boolean = false
+) {
+  cell.border = border;
+  cell.alignment = { horizontal: 'right', vertical: 'middle' };
+  cell.numFmt = ACCOUNTING_NUM_FMT;
+
+  if (val > 0) {
+    // POSITIVE -> GREEN (أخضر بالموجب)
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } };
+    cell.font = { name: 'Calibri', size: isBold ? 11 : 10, bold: isBold, color: { argb: 'FF006100' } };
+  } else if (val < 0) {
+    // NEGATIVE -> RED (أحمر بالسالب مع أقواس المحاسبة)
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+    cell.font = { name: 'Calibri', size: isBold ? 11 : 10, bold: isBold, color: { argb: 'FF9C0006' } };
+  } else {
+    // ZERO -> Neutral Dash in Accounting format
+    cell.font = { name: 'Calibri', size: isBold ? 11 : 10, color: { argb: 'FF7F7F7F' } };
+  }
+}
+
 export async function exportNettingSheet(
   nettingRows: NettingRow[],
   totalBuy: number,
@@ -578,48 +604,29 @@ export async function exportNettingSheet(
     headerRow.getCell(c).border = headerBorder;
   }
 
-  // Exact matching media_1788005938657.png
+  // Rows
   nettingRows.forEach((row, idx) => {
     const rowNumber = idx + 2;
     const addedRow = ws.addRow({
       symbolCode: row.symbolCode,
       symbolName: row.symbolName,
       actualSymbol: row.actualSymbol,
-      buy: row.buyTotal > 0 ? row.buyTotal : '-',
-      sell: row.sellTotal > 0 ? row.sellTotal : '-',
-      net: row.netAmount !== 0 ? row.netAmount : '-',
+      buy: row.buyTotal,
+      sell: row.sellTotal,
+      net: row.netAmount,
     });
 
     addedRow.height = 20;
 
     for (let c = 1; c <= 6; c++) {
       const cell = addedRow.getCell(c);
-      cell.border = thinBorder;
-      cell.font = { name: 'Calibri', size: 10 };
-
-      if (c <= 3) cell.alignment = { horizontal: 'left', vertical: 'middle' };
-      if (c === 4 || c === 5) {
-        if (typeof cell.value === 'number') {
-          cell.alignment = { horizontal: 'right', vertical: 'middle' };
-          cell.numFmt = '#,##0.00';
-        } else {
-          cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        }
-      }
-      if (c === 6) {
-        if (typeof cell.value === 'number') {
-          cell.alignment = { horizontal: 'right', vertical: 'middle' };
-          cell.numFmt = '#,##0.00;(#,##0.00);"-"';
-          if (cell.value > 0) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } };
-            cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF006100' } };
-          } else if (cell.value < 0) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
-            cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF9C0006' } };
-          }
-        } else {
-          cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        }
+      if (c <= 3) {
+        cell.border = thinBorder;
+        cell.font = { name: 'Calibri', size: 10 };
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      } else {
+        const val = typeof cell.value === 'number' ? cell.value : 0;
+        applyAccountingCellStyles(cell, val, thinBorder);
       }
     }
 
@@ -649,26 +656,21 @@ export async function exportNettingSheet(
   summaryRow.font = { name: 'Calibri', size: 11, bold: true };
   summaryRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
 
+  const summaryBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FF000000' } },
+    bottom: { style: 'double', color: { argb: 'FF000000' } },
+    left: { style: 'thin', color: { argb: 'FF000000' } },
+    right: { style: 'thin', color: { argb: 'FF000000' } },
+  };
+
   for (let c = 1; c <= 6; c++) {
     const cell = summaryRow.getCell(c);
-    cell.border = {
-      top: { style: 'thin', color: { argb: 'FF000000' } },
-      bottom: { style: 'double', color: { argb: 'FF000000' } },
-      left: { style: 'thin', color: { argb: 'FF000000' } },
-      right: { style: 'thin', color: { argb: 'FF000000' } },
-    };
-    if (c === 4 || c === 5) {
-      cell.alignment = { horizontal: 'right', vertical: 'middle' };
-      cell.numFmt = '#,##0.00';
-    }
-    if (c === 6) {
-      cell.alignment = { horizontal: 'right', vertical: 'middle' };
-      cell.numFmt = '#,##0.00;(#,##0.00);"-"';
-      if (totalNet > 0) {
-        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF006100' } };
-      } else if (totalNet < 0) {
-        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF9C0006' } };
-      }
+    if (c <= 3) {
+      cell.border = summaryBorder;
+      cell.alignment = { horizontal: 'left', vertical: 'middle' };
+    } else {
+      const val = typeof cell.value === 'number' ? cell.value : 0;
+      applyAccountingCellStyles(cell, val, summaryBorder, true);
     }
   }
 
@@ -684,12 +686,10 @@ export async function exportNettingSheet(
 
 /**
  * Exports the Netting Cash Transfer Sheet as a beautifully formatted Excel file (.xlsx)
- * matching the UI visual styling:
- * - Transfer / Sell (تحويل): RED background (#FFEBEE) and bold red text (#B71C1C)
- * - Receive / Buy (استقبال): GREEN background (#E8F5E9) and bold green text (#1B5E20)
- * - System Net Transfer and Final Transfer styled with Red / Green indicators
- * - Adjustments highlighted in soft Amber (#FFF9C4 / #F57F17)
- * - Bold summary totals row with double bottom border
+ * matching the user's explicit accounting requirements:
+ * - Negative values (< 0): RED (#FFFFC7CE fill, #FF9C0006 text) with accounting parentheses
+ * - Positive values (> 0): GREEN (#FFC6EFCE fill, #FF006100 text)
+ * - Number format: Excel Accounting format `_(* #,##0.00_);_(* (#,##0.00);_(* "-"??_);_(@_)`
  */
 export async function exportTransferSheetBatchExcel(
   lines: TransferSheetLine[],
@@ -699,7 +699,8 @@ export async function exportTransferSheetBatchExcel(
   workbook.creator = 'Investment Operations Platform';
   workbook.created = new Date();
 
-  const ws = workbook.addWorksheet('Cash Netting & Transfers');
+  const safeTabName = (batchNumber || 'Netting Sheet').replace(/[\/*?:[\]]/g, '_').substring(0, 31);
+  const ws = workbook.addWorksheet(safeTabName);
   ws.views = [{ showGridLines: true }];
 
   ws.columns = [
@@ -709,7 +710,7 @@ export async function exportTransferSheetBatchExcel(
     { header: 'System Buy (استقبال)', key: 'systemBuy', width: 22 },
     { header: 'System Sell (تحويل)', key: 'systemSell', width: 22 },
     { header: 'System Net (Sell - Buy)', key: 'systemNet', width: 24 },
-    { header: 'Adjustment Amount', key: 'adjustment', width: 20 },
+    { header: 'Adjustment Amount', key: 'adjustment', width: 22 },
     { header: 'Final Transfer Amount', key: 'finalTransfer', width: 24 },
     { header: 'Transfer Action', key: 'action', width: 26 },
   ];
@@ -750,13 +751,12 @@ export async function exportTransferSheetBatchExcel(
     totalAdjustment += line.adjustmentAmount || 0;
     totalFinal += line.finalTransferAmount || 0;
 
-    const isTransfer = line.finalTransferAmount > 0;
-    const isReceive = line.finalTransferAmount < 0;
-    const actionText = isTransfer
+    const finalVal = line.finalTransferAmount || 0;
+    const actionText = finalVal > 0
       ? 'تحويل من الصندوق (Transfer)'
-      : isReceive
+      : finalVal < 0
       ? 'استقبال للصندوق (Receive)'
-      : 'لا يوجد تحويل (Zero)';
+      : 'لا يوجد تحويل (-)';
 
     const addedRow = ws.addRow({
       symbolCode: line.symbolCode,
@@ -774,80 +774,52 @@ export async function exportTransferSheetBatchExcel(
 
     for (let c = 1; c <= 9; c++) {
       const cell = addedRow.getCell(c);
-      cell.border = thinBorder;
-      cell.font = { name: 'Calibri', size: 10 };
 
       // Col 1-3: Identifiers
       if (c <= 3) {
+        cell.border = thinBorder;
+        cell.font = { name: 'Calibri', size: 10 };
         cell.alignment = { horizontal: c === 1 ? 'center' : 'left', vertical: 'middle' };
         if (c === 1) cell.font = { name: 'Calibri', size: 10, bold: true };
       }
 
-      // Col 4: Buy (استقبال) -> Soft Green styling
+      // Col 4: Buy
       if (c === 4) {
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        cell.numFmt = '#,##0.00';
-        if (line.systemBuyAmount > 0) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
-          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1B5E20' } };
-        }
+        applyAccountingCellStyles(cell, line.systemBuyAmount, thinBorder);
       }
 
-      // Col 5: Sell (تحويل) -> Soft Red styling
+      // Col 5: Sell
       if (c === 5) {
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        cell.numFmt = '#,##0.00';
-        if (line.systemSellAmount > 0) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEBEE' } };
-          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFB71C1C' } };
-        }
+        applyAccountingCellStyles(cell, line.systemSellAmount, thinBorder);
       }
 
-      // Col 6: System Net Transfer
+      // Col 6: System Net Transfer (Positive = Green, Negative = Red with parentheses)
       if (c === 6) {
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        cell.numFmt = '#,##0.00;(#,##0.00);"-"';
-        if (line.systemNetAmount > 0) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCDD2' } };
-          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFC62828' } };
-        } else if (line.systemNetAmount < 0) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC8E6C9' } };
-          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF2E7D32' } };
-        }
+        applyAccountingCellStyles(cell, line.systemNetAmount, thinBorder, true);
       }
 
-      // Col 7: Adjustment
+      // Col 7: Adjustment Amount (Positive = Green, Negative = Red)
       if (c === 7) {
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        cell.numFmt = '#,##0.00;(#,##0.00);"-"';
-        if (line.adjustmentAmount !== 0) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9C4' } };
-          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFF57F17' } };
-        }
+        applyAccountingCellStyles(cell, line.adjustmentAmount || 0, thinBorder);
       }
 
-      // Col 8: Final Transfer Amount
+      // Col 8: Final Transfer Amount (Positive = Green, Negative = Red with parentheses)
       if (c === 8) {
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        cell.numFmt = '#,##0.00;(#,##0.00);"-"';
-        if (line.finalTransferAmount > 0) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCDD2' } };
-          cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFB71C1C' } };
-        } else if (line.finalTransferAmount < 0) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC8E6C9' } };
-          cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF1B5E20' } };
-        }
+        applyAccountingCellStyles(cell, line.finalTransferAmount, thinBorder, true);
       }
 
       // Col 9: Action
       if (c === 9) {
+        cell.border = thinBorder;
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        if (isTransfer) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEBEE' } };
-          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFB71C1C' } };
-        } else if (isReceive) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
-          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1B5E20' } };
+        if (finalVal > 0) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } };
+          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF006100' } };
+        } else if (finalVal < 0) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF9C0006' } };
+        } else {
+          cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF7F7F7F' } };
         }
       }
     }
@@ -863,35 +835,28 @@ export async function exportTransferSheetBatchExcel(
     systemNet: totalNet,
     adjustment: totalAdjustment,
     finalTransfer: totalFinal,
-    action: totalFinal > 0 ? 'NET TRANSFER (تحويل)' : 'NET RECEIVE (استقبال)',
+    action: totalFinal > 0 ? 'NET TRANSFER (تحويل)' : totalFinal < 0 ? 'NET RECEIVE (استقبال)' : 'BALANCED',
   });
   summaryRow.height = 26;
   summaryRow.font = { name: 'Calibri', size: 11, bold: true };
   summaryRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
 
+  const summaryBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FF000000' } },
+    bottom: { style: 'double', color: { argb: 'FF000000' } },
+    left: { style: 'thin', color: { argb: 'FF000000' } },
+    right: { style: 'thin', color: { argb: 'FF000000' } },
+  };
+
   for (let c = 1; c <= 9; c++) {
     const cell = summaryRow.getCell(c);
-    cell.border = {
-      top: { style: 'thin', color: { argb: 'FF000000' } },
-      bottom: { style: 'double', color: { argb: 'FF000000' } },
-      left: { style: 'thin', color: { argb: 'FF000000' } },
-      right: { style: 'thin', color: { argb: 'FF000000' } },
-    };
     if (c >= 4 && c <= 8) {
-      cell.alignment = { horizontal: 'right', vertical: 'middle' };
-      cell.numFmt = '#,##0.00;(#,##0.00);"-"';
-      if (c === 4) cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF1B5E20' } };
-      if (c === 5) cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFB71C1C' } };
-      if (c === 8) {
-        cell.font = {
-          name: 'Calibri',
-          size: 12,
-          bold: true,
-          color: { argb: totalFinal > 0 ? 'FFB71C1C' : 'FF1B5E20' },
-        };
-      }
+      const val = typeof cell.value === 'number' ? cell.value : 0;
+      applyAccountingCellStyles(cell, val, summaryBorder, true);
     } else {
+      cell.border = summaryBorder;
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF000000' } };
     }
   }
 
