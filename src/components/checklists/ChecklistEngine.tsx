@@ -224,15 +224,21 @@ export function ChecklistEngine({
                         ) : null}
                       </div>
 
-                      {/* Description */}
+                      {/* Description (Arabic Operational Explanation) */}
                       {item.description && (
-                        <p
-                          className={`text-xs mt-1 ${
-                            isMissedDeadline ? 'text-rose-700 font-medium' : 'text-slate-600'
+                        <div
+                          dir="rtl"
+                          className={`mt-2 text-xs leading-relaxed p-2 rounded-lg border ${
+                            isMissedDeadline
+                              ? 'bg-rose-50/80 border-rose-200 text-rose-800 font-medium'
+                              : item.isApproved
+                              ? 'bg-emerald-50/50 border-emerald-200 text-slate-700'
+                              : 'bg-slate-50/80 border-slate-200/80 text-slate-700'
                           }`}
                         >
-                          {item.description}
-                        </p>
+                          <span className="font-bold text-slate-900 ml-1">الوصف التشغيلي:</span>
+                          <span>{item.description}</span>
+                        </div>
                       )}
 
                       {/* Two-Tier Signatures Banner */}
