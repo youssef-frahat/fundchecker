@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { X, FileSpreadsheet, Download, RefreshCw, Hash, Calendar, Layers, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { X, FileSpreadsheet, Download, RefreshCw } from 'lucide-react';
 import { UploadedFileRecord, RawTransactionRow, TransferSheetLine } from '@/lib/types';
 import { fetchHistoricalFileRowsAction } from '@/app/actions/workspaceActions';
 import { exportTransactionSheetsPerProduct } from '@/lib/excel-engine';

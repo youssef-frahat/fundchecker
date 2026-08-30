@@ -159,12 +159,12 @@ export async function fetchHistoricalFileRowsAction(fileId: string): Promise<{
           .eq('batch_id', batch.id)
           .order('symbol_code', { ascending: true });
 
-        const lines: import('@/lib/types').TransferSheetLine[] = (dbLines || []).map((l: any) => ({
+        const lines: import('@/lib/types').TransferSheetLine[] = (dbLines || []).map((l: Record<string, unknown>) => ({
           id: String(l.id),
           batchId: String(l.batch_id),
           symbolCode: String(l.symbol_code),
           symbolName: String(l.symbol_name),
-          actualSymbol: l.actual_symbol,
+          actualSymbol: typeof l.actual_symbol === 'string' ? l.actual_symbol : undefined,
           systemBuyAmount: Number(l.system_buy_amount) || 0,
           systemSellAmount: Number(l.system_sell_amount) || 0,
           systemNetAmount: (Number(l.system_sell_amount) || 0) - (Number(l.system_buy_amount) || 0),
@@ -191,7 +191,7 @@ export async function fetchHistoricalFileRowsAction(fileId: string): Promise<{
       return { success: false, error: txErr.message };
     }
 
-    const rows: import('@/lib/types').RawTransactionRow[] = (txs || []).map((t: any) => ({
+    const rows: import('@/lib/types').RawTransactionRow[] = (txs || []).map((t: Record<string, unknown>) => ({
       id: String(t.id),
       fileId: String(t.file_id),
       requestId: String(t.request_id || ''),
@@ -205,9 +205,9 @@ export async function fetchHistoricalFileRowsAction(fileId: string): Promise<{
       orderValue: Number(t.order_value) || 0,
       totalCommission: Number(t.total_commission) || 0,
       netSettle: Number(t.net_settle) || 0,
-      cashAccountNo: t.cash_account_no,
-      isinCode: t.isin_code,
-      orderDate: t.order_date,
+      cashAccountNo: typeof t.cash_account_no === 'string' ? t.cash_account_no : undefined,
+      isinCode: typeof t.isin_code === 'string' ? t.isin_code : undefined,
+      orderDate: String(t.order_date || ''),
     }));
 
     return { success: true, fileRecord, rows, isAllocation: false };

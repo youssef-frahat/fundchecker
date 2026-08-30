@@ -3,7 +3,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Download, Layers, FileSpreadsheet, Archive, Check, Filter } from 'lucide-react';
+import { Download, Layers, FileSpreadsheet, Archive, Check } from 'lucide-react';
 import { GeneratedTransactionRow } from '@/lib/types';
 import {
   exportSingleFundTransactionSheet,
