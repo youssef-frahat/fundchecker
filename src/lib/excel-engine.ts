@@ -237,13 +237,15 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
 
 export async function exportSingleFundTransactionSheet(
   allRows: GeneratedTransactionRow[],
-  productName: string
+  productName: string,
+  forceCompleteData: boolean = false
 ): Promise<Blob> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Investment Management Platform';
 
-  const fundRows = allRows.filter((r) => r.productName === productName);
-  const safeSheetName = productName.substring(0, 31).replace(/[\/*?:[\]]/g, '_');
+  const targetName = productName.trim().toLowerCase();
+  const fundRows = allRows.filter((r) => r.productName.trim().toLowerCase() === targetName);
+  const safeSheetName = (productName.trim() || 'Fund Sheet').substring(0, 31).replace(/[\/*?:[\]]/g, '_');
   const ws = workbook.addWorksheet(safeSheetName || 'Fund Sheet');
   ws.views = [{ showGridLines: true }];
 
@@ -277,14 +279,22 @@ export async function exportSingleFundTransactionSheet(
   headerRow.eachCell((cell) => { cell.border = thinBorder; });
 
   for (const item of fundRows) {
+    const val = item.transactionValue !== null
+      ? item.transactionValue
+      : (forceCompleteData && item.qty !== null && item.icPrice ? item.qty * item.icPrice : '');
+
+    const quantity = item.qty !== null
+      ? item.qty
+      : (forceCompleteData && item.transactionValue !== null && item.icPrice ? item.transactionValue / item.icPrice : '');
+
     const addedRow = ws.addRow({
       transactionId: item.transactionId,
       transactionType: item.transactionType.toLowerCase(), // lowercase 'buy' / 'sell'
       transactionDate: item.transactionDate,
       externalCode: item.externalCode,
       name: item.name,
-      transactionValue: item.transactionValue !== null ? item.transactionValue : '',
-      qty: item.qty !== null ? item.qty : '',
+      transactionValue: val,
+      qty: quantity,
       branchId: item.branchId,
       valueDate: item.valueDate,
       icPrice: item.icPrice,
@@ -314,7 +324,8 @@ export async function exportSingleFundTransactionSheet(
 }
 
 export async function exportTransactionSheetsPerProduct(
-  rows: GeneratedTransactionRow[]
+  rows: GeneratedTransactionRow[],
+  forceCompleteData: boolean = false
 ): Promise<Blob> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Investment Management Platform';
@@ -368,14 +379,22 @@ export async function exportTransactionSheetsPerProduct(
 
     const prodRows = productMap.get(prodKey)!;
     for (const item of prodRows) {
+      const val = item.transactionValue !== null
+        ? item.transactionValue
+        : (forceCompleteData && item.qty !== null && item.icPrice ? item.qty * item.icPrice : '');
+
+      const quantity = item.qty !== null
+        ? item.qty
+        : (forceCompleteData && item.transactionValue !== null && item.icPrice ? item.transactionValue / item.icPrice : '');
+
       const addedRow = ws.addRow({
         transactionId: item.transactionId,
         transactionType: item.transactionType.toLowerCase(), // lowercase 'buy' / 'sell'
         transactionDate: item.transactionDate,
         externalCode: item.externalCode,
         name: item.name,
-        transactionValue: item.transactionValue !== null ? item.transactionValue : '',
-        qty: item.qty !== null ? item.qty : '',
+        transactionValue: val,
+        qty: quantity,
         branchId: item.branchId,
         valueDate: item.valueDate,
         icPrice: item.icPrice,

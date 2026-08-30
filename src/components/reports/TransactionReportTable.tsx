@@ -64,28 +64,43 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
 
   const activeNetBalance = activeSellTotal - activeBuyTotal;
 
+  const [isExportingSingle, setIsExportingSingle] = useState<boolean>(false);
+
   // Export handlers
   const handleExportAllExcel = async () => {
-    const blob = await exportTransactionSheetsPerProduct(rows);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `All_Funds_Workbook_${new Date().toISOString().split('T')[0]}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      const blob = await exportTransactionSheetsPerProduct(rows, showCompleteData);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `All_Funds_Workbook_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export workbook:', err);
+    }
   };
 
   const handleExportSingleFund = async (fundName: string) => {
-    const blob = await exportSingleFundTransactionSheet(rows, fundName);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const safeName = fundName.replace(/[^a-zA-Z0-9_\u0600-\u06FF-]/g, '_');
-    a.download = `${safeName}_Transaction_Sheet_${new Date().toISOString().split('T')[0]}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      setIsExportingSingle(true);
+      const blob = await exportSingleFundTransactionSheet(rows, fundName, showCompleteData);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = fundName.replace(/[^a-zA-Z0-9_\u0600-\u06FF-]/g, '_') || 'Fund';
+      a.download = `${safeName}_Transaction_Sheet_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export single fund sheet:', err);
+    } finally {
+      setIsExportingSingle(false);
+    }
   };
 
   const handleExportZip = async () => {
@@ -99,6 +114,9 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export ZIP:', err);
     } finally {
       setIsExportingZip(false);
     }
@@ -126,11 +144,12 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
           {activeFund !== 'All' && (
             <button
               onClick={() => handleExportSingleFund(activeFund)}
-              className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-sm"
+              disabled={isExportingSingle}
+              className="bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-sm"
               title={`Download standalone Excel file for ${activeFund}`}
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-              Download &quot;{activeFund.substring(0, 16)}...&quot; (.xlsx)
+              {isExportingSingle ? 'Exporting...' : `Download "${activeFund.substring(0, 16)}..." (.xlsx)`}
             </button>
           )}
 
