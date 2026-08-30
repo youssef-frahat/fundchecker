@@ -48,6 +48,7 @@ import {
   fetchWorkspaceDataAction,
   updateChecklistStatusAction,
   reopenChecklistAction,
+  approveChecklistAction,
   saveAuditLogAction,
   fetchAuditLogsAction,
 } from '@/app/actions/workspaceActions';
@@ -341,8 +342,51 @@ export default function InvestmentPlatformPage() {
     );
   };
 
-  const handleToggleChecklist = async (itemId: string) => {
+  const handleToggleChecklist = async (itemId: string, nextStatus: boolean = true) => {
     if (!currentUser) return;
+    const userEmail = currentUser.email;
+    const userName = currentUser.fullName;
+    const userId = currentUser.id;
+
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === itemId || c.checklistId === itemId
+          ? nextStatus
+            ? {
+                ...c,
+                isCompleted: true,
+                completedBy: userEmail,
+                completedByName: userName,
+                completedAt: new Date().toISOString(),
+              }
+            : {
+                ...c,
+                isCompleted: false,
+                completedBy: undefined,
+                completedByName: undefined,
+                completedAt: undefined,
+              }
+          : c
+      )
+    );
+
+    await updateChecklistStatusAction(itemId, nextStatus, userEmail, userName, userId);
+    addAuditLog(
+      nextStatus ? 'CHECKLIST_COMPLETE' : 'CHECKLIST_UNDO',
+      'CHECKLIST_ITEM',
+      itemId,
+      { status: nextStatus ? 'COMPLETED' : 'UNCHECKED' }
+    );
+
+    // Refresh checklists from database to guarantee cross-user parity
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.checklists) {
+      setChecklists(wsData.checklists);
+    }
+  };
+
+  const handleApproveChecklist = async (itemId: string) => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') return;
     const userEmail = currentUser.email;
     const userName = currentUser.fullName;
     const userId = currentUser.id;
@@ -352,19 +396,21 @@ export default function InvestmentPlatformPage() {
         c.id === itemId || c.checklistId === itemId
           ? {
               ...c,
-              isCompleted: true,
-              completedBy: userEmail,
-              completedByName: userName,
-              completedAt: new Date().toISOString(),
+              isApproved: true,
+              approvedBy: userEmail,
+              approvedByName: userName,
+              approvedAt: new Date().toISOString(),
             }
           : c
       )
     );
 
-    await updateChecklistStatusAction(itemId, true, userEmail, userName, userId);
-    addAuditLog('CHECKLIST_COMPLETE', 'CHECKLIST_ITEM', itemId);
+    await approveChecklistAction(itemId, userEmail, userName, userId);
+    addAuditLog('CHECKLIST_APPROVE', 'CHECKLIST_ITEM', itemId, {
+      approvedBy: userName,
+      note: 'Permanently locked by Super Admin',
+    });
 
-    // Refresh checklists from database to guarantee cross-user parity
     const wsData = await fetchWorkspaceDataAction();
     if (wsData.success && wsData.checklists) {
       setChecklists(wsData.checklists);
@@ -383,6 +429,7 @@ export default function InvestmentPlatformPage() {
           ? {
               ...c,
               isCompleted: false,
+              isApproved: false,
               reopenedBy: userEmail,
               reopenedByName: userName,
               reopenedAt: new Date().toISOString(),
@@ -603,6 +650,7 @@ export default function InvestmentPlatformPage() {
             items={checklists}
             currentRole={currentUser.role}
             onToggleComplete={handleToggleChecklist}
+            onApproveItem={handleApproveChecklist}
             onReopenItem={handleReopenChecklist}
           />
         )}

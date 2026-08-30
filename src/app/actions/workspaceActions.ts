@@ -87,6 +87,16 @@ export async function reopenChecklistAction(
   await reopenChecklistItemInDb(id, userEmail, userName, reason, userId);
 }
 
+export async function approveChecklistAction(
+  id: string,
+  userEmail: string,
+  userName: string,
+  userId?: string
+) {
+  const { approveChecklistItemInDb } = await import('@/lib/repositories/checklistRepository');
+  await approveChecklistItemInDb(id, userEmail, userName, userId);
+}
+
 export async function saveAuditLogAction(log: import('@/lib/types').AuditLog) {
   const { getAuthenticatedServerUser } = await import('@/lib/supabase-server');
   const caller = await getAuthenticatedServerUser();

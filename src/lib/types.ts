@@ -155,10 +155,15 @@ export interface ChecklistItem {
   completedBy?: string;
   completedByName?: string;
   completedAt?: string;
+  isApproved?: boolean;
+  approvedBy?: string;
+  approvedByName?: string;
+  approvedAt?: string;
   reopenedBy?: string;
   reopenedByName?: string;
   reopenedAt?: string;
   reopenReason?: string;
+  status?: string;
 }
 
 export interface AuditLog {
