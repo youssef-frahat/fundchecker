@@ -336,7 +336,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
                     </td>
                     <td className="p-3 text-right font-semibold text-slate-900">
                       {displayQty !== null ? (
-                        displayQty.toLocaleString('en-US')
+                        displayQty.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
                       ) : (
                         <span className="text-slate-400 font-mono text-[11px]">—</span>
                       )}

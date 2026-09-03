@@ -174,4 +174,81 @@ describe('Allocation Processing Engine (FIN-01 & SEC-01)', () => {
     assert.equal(result.exceptions[0].exceptionType, 'SCHEMATIC_ERR');
     assert.ok(result.exceptions[0].errorMessage.includes('not approved for cash settlement'));
   });
+
+  it('should accurately calculate Net Settlement with decimal fractional quantities (e.g. 6248.516 units)', () => {
+    const rawRows: RawTransactionRow[] = [
+      {
+        id: 'tx-dec-1',
+        fileId: 'file-1',
+        requestId: 'REQ-DEC-1',
+        mubasherNo: 'MUB-D1',
+        customerName: 'Investor Fractional',
+        orderSide: 'BUY',
+        symbol: '1001',
+        symbolDescription: 'AZ - IDKHAR',
+        quantity: 6248.516,
+        allocatedQuantity: 6248.516,
+        price: 21.13012,
+        orderValue: 132031.89,
+        totalCommission: 0,
+        netSettle: 132031.89,
+        orderDate: '2026-08-30',
+        orderStatus: 'EXECUTED',
+      },
+    ];
+
+    const result = processAllocationFile(
+      rawRows,
+      mockRefData,
+      'file-1',
+      'alloc_sheet.xlsx',
+      'maker-uuid',
+      'Maker Operator'
+    );
+
+    assert.equal(result.importedCount, 1);
+    assert.equal(result.rejectedCount, 0);
+    const fund1001Line = result.lines.find((l) => l.symbolCode === '1001');
+    assert.ok(fund1001Line);
+    assert.equal(fund1001Line.systemBuyAmount, 132031.8929);
+  });
+
+  it('should resolve execution price from Reference NAV data or order value when price is 0', () => {
+    const rawRows: RawTransactionRow[] = [
+      {
+        id: 'tx-price-zero',
+        fileId: 'file-1',
+        requestId: 'REQ-PRICE-0',
+        mubasherNo: 'MUB-P0',
+        customerName: 'Investor NAV',
+        orderSide: 'SELL',
+        symbol: '1001',
+        symbolDescription: 'AZ - IDKHAR',
+        quantity: 1000,
+        allocatedQuantity: 1000,
+        price: 0, // Price is 0 in raw file
+        orderValue: 0,
+        totalCommission: 0,
+        netSettle: 0,
+        orderDate: '2026-08-30',
+        orderStatus: 'APPROVED',
+      },
+    ];
+
+    const result = processAllocationFile(
+      rawRows,
+      mockRefData,
+      'file-1',
+      'alloc_sheet.xlsx',
+      'maker-uuid',
+      'Maker Operator'
+    );
+
+    assert.equal(result.importedCount, 1);
+    assert.equal(result.rejectedCount, 0);
+    const fund1001Line = result.lines.find((l) => l.symbolCode === '1001');
+    assert.ok(fund1001Line);
+    // Uses navUnitPrice from mockRefData (21.13012 * 1000 = 21130.12)
+    assert.equal(fund1001Line.systemSellAmount, 21130.12);
+  });
 });

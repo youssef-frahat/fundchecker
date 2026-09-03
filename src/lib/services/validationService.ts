@@ -20,7 +20,8 @@ export async function validateTradeFile(
   fileHashSha256: string,
   fileName: string,
   rows: RawTransactionRow[],
-  currentFileId?: string
+  currentFileId?: string,
+  allowOverwrite: boolean = true
 ): Promise<FileValidationResult> {
   const exceptions: ExceptionRecord[] = [];
   const validRows: RawTransactionRow[] = [];
@@ -28,7 +29,7 @@ export async function validateTradeFile(
 
   // 1. File-level Duplicate Check (excluding current file record)
   const existingFile = await checkDuplicateFileHash(fileHashSha256, currentFileId);
-  if (existingFile) {
+  if (existingFile && !allowOverwrite) {
     exceptions.push({
       id: `ex-dup-file-${Date.now()}`,
       fileId: existingFile.id,

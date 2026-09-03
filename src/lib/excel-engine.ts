@@ -210,6 +210,10 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
     }
 
     if (requestId || effectiveSymbol !== 'UNKNOWN_SYMBOL' || orderValue > 0) {
+      const derivedQty = quantity > 0 ? quantity : (price > 0 && orderValue > 0 ? orderValue / price : (allocatedQuantity > 0 ? allocatedQuantity : 1));
+      const derivedPrice = price > 0 ? price : (derivedQty > 0 && orderValue > 0 ? orderValue / derivedQty : 0);
+      const derivedOrderValue = orderValue > 0 ? orderValue : derivedQty * derivedPrice;
+
       rows.push({
         id: `tx-${rowNumber}-${Date.now()}`,
         fileId,
@@ -221,10 +225,10 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
         symbol: effectiveSymbol,
         symbolDescription: effectiveDescription,
         orderStatus: rawOrderStatus,
-        allocatedQuantity: allocatedQuantity > 0 ? allocatedQuantity : quantity,
-        quantity: quantity || (price > 0 ? Math.round(orderValue / price) : 1),
-        price: price || (quantity > 0 ? orderValue / quantity : 0),
-        orderValue: orderValue || quantity * price,
+        allocatedQuantity: allocatedQuantity > 0 ? allocatedQuantity : derivedQty,
+        quantity: derivedQty,
+        price: derivedPrice,
+        orderValue: derivedOrderValue,
         isinCode,
         orderDate: orderDateRaw || new Date().toISOString(),
       });
@@ -309,7 +313,7 @@ export async function exportSingleFundTransactionSheet(
       } else if ([6, 7, 10].includes(colNumber)) {
         cell.alignment = { horizontal: 'right', vertical: 'middle' };
         if (colNumber === 6 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
-        if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0';
+        if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0.###';
         if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
       } else {
         cell.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -409,7 +413,7 @@ export async function exportTransactionSheetsPerProduct(
         } else if ([6, 7, 10].includes(colNumber)) {
           cell.alignment = { horizontal: 'right', vertical: 'middle' };
           if (colNumber === 6 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
-          if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0';
+          if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0.###';
           if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
         } else {
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -518,7 +522,7 @@ export async function exportAllFundsAsZip(
         } else if ([6, 7, 10].includes(colNumber)) {
           cell.alignment = { horizontal: 'right', vertical: 'middle' };
           if (colNumber === 6 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
-          if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0';
+          if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0.###';
           if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
         } else {
           cell.alignment = { horizontal: 'left', vertical: 'middle' };

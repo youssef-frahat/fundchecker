@@ -11,7 +11,8 @@ export async function processTradeFileAction(
   fileName: string,
   fileHashSha256: string,
   fileSize: number,
-  rawRows: RawTransactionRow[]
+  rawRows: RawTransactionRow[],
+  allowOverwrite: boolean = true
 ): Promise<{ success: boolean; report?: ProcessingPipelineReport; error?: string }> {
   try {
     // Authenticate Request & Extract User Identity strictly from Server Session
@@ -37,7 +38,8 @@ export async function processTradeFileAction(
       fileSize,
       rawRows,
       currentUser.id,
-      clientIp
+      clientIp,
+      allowOverwrite
     );
 
     return { success: true, report };

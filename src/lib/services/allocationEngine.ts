@@ -167,27 +167,6 @@ export function processAllocationFile(
       continue;
     }
 
-    // 6. Price > 0
-    const price = Number(row.price) || 0;
-    if (price <= 0) {
-      rejectedCount++;
-      exceptions.push({
-        id: crypto.randomUUID(),
-        fileId: allocationFileId,
-        fileName,
-        exceptionType: 'SCHEMATIC_ERR',
-        errorMessage: `Row ${rowNum}: Execution Price must be greater than 0. Found: ${price}.`,
-        rawPayload: { rowNum, ...row },
-        status: 'OPEN',
-        createdAt: new Date().toISOString(),
-      });
-      continue;
-    }
-
-    // Row is Valid -> Calculate Financial Amount: Allocated Quantity × Price
-    const lineExecutionAmount = allocQty * price;
-    importedCount++;
-
     // Match symbol with reference data
     const symClean = sym.toLowerCase();
     const descClean = (row.symbolDescription || '').trim().toLowerCase();
@@ -199,6 +178,35 @@ export function processAllocationFile(
         r.symbolName.toLowerCase() === descClean ||
         r.symbolName.toLowerCase() === symClean
     );
+
+    // 6. Price Resolution: Direct Price -> Order Value / Alloc Qty -> Fund Reference NAV Unit Price
+    let price = Number(row.price) || 0;
+    if (price <= 0) {
+      if (row.orderValue && Number(row.orderValue) > 0 && allocQty > 0) {
+        price = Number(row.orderValue) / allocQty;
+      } else if (matchedRef && matchedRef.navUnitPrice && matchedRef.navUnitPrice > 0) {
+        price = matchedRef.navUnitPrice;
+      }
+    }
+
+    if (price <= 0) {
+      rejectedCount++;
+      exceptions.push({
+        id: crypto.randomUUID(),
+        fileId: allocationFileId,
+        fileName,
+        exceptionType: 'SCHEMATIC_ERR',
+        errorMessage: `Row ${rowNum}: Execution Price must be greater than 0 and could not be resolved from NAV Reference Data. Found: ${price}.`,
+        rawPayload: { rowNum, ...row },
+        status: 'OPEN',
+        createdAt: new Date().toISOString(),
+      });
+      continue;
+    }
+
+    // Row is Valid -> Calculate Financial Amount: Allocated Quantity × Price
+    const lineExecutionAmount = allocQty * price;
+    importedCount++;
 
     const targetCode = matchedRef ? matchedRef.symbolCode : sym;
     const targetName = matchedRef ? matchedRef.symbolName : row.symbolDescription || sym;

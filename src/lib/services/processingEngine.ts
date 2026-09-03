@@ -77,7 +77,8 @@ export async function executeProcessingPipeline(
   fileSize: number,
   rawRows: RawTransactionRow[],
   userId: string,
-  clientIp: string = '0.0.0.0'
+  clientIp: string = '0.0.0.0',
+  allowOverwrite: boolean = true
 ): Promise<ProcessingPipelineReport> {
   const executionId = crypto.randomUUID();
   const timestamp = new Date().toISOString();
@@ -119,7 +120,7 @@ export async function executeProcessingPipeline(
     await insertTransactionsBatch(fileId, preparedRows);
 
     // 3. Validation Engine (excluding current file record from duplicate detection)
-    const validationResult: FileValidationResult = await validateTradeFile(fileHashSha256, fileName, preparedRows, fileId);
+    const validationResult: FileValidationResult = await validateTradeFile(fileHashSha256, fileName, preparedRows, fileId, allowOverwrite);
     allExceptions.push(...validationResult.exceptions);
 
     if (validationResult.isDuplicateFile) {
