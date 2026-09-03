@@ -82,3 +82,41 @@ export async function fetchOpenExceptions(): Promise<ExceptionRecord[]> {
     return [];
   }
 }
+
+export async function resolveExceptionInDb(id: string, resolvedBy?: string): Promise<boolean> {
+  try {
+    const supabase = await getDbClient();
+    const { error } = await supabase
+      .from('exceptions')
+      .update({
+        status: 'RESOLVED',
+        resolved_at: new Date().toISOString(),
+        resolved_by: resolvedBy || null,
+      })
+      .eq('id', id);
+
+    return !error;
+  } catch (err) {
+    console.warn('Resolve exception error:', err);
+    return false;
+  }
+}
+
+export async function resolveAllExceptionsInDb(resolvedBy?: string): Promise<boolean> {
+  try {
+    const supabase = await getDbClient();
+    const { error } = await supabase
+      .from('exceptions')
+      .update({
+        status: 'RESOLVED',
+        resolved_at: new Date().toISOString(),
+        resolved_by: resolvedBy || null,
+      })
+      .eq('status', 'OPEN');
+
+    return !error;
+  } catch (err) {
+    console.warn('Resolve all exceptions error:', err);
+    return false;
+  }
+}

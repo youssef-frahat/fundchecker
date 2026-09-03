@@ -53,6 +53,8 @@ import {
   resetDailyChecklistsAction,
   saveAuditLogAction,
   fetchAuditLogsAction,
+  resolveExceptionAction,
+  resolveAllExceptionsAction,
 } from '@/app/actions/workspaceActions';
 import {
   createUserAction,
@@ -558,11 +560,28 @@ export default function InvestmentPlatformPage() {
     }
   };
 
-  const handleResolveException = (id: string) => {
+  const handleResolveException = async (id: string) => {
     setExceptions((prev) =>
       prev.map((ex) => (ex.id === id ? { ...ex, status: 'RESOLVED', resolvedAt: new Date().toISOString() } : ex))
     );
     addAuditLog('RESOLVE_EXCEPTION', 'EXCEPTION_RECORD', id);
+    await resolveExceptionAction(id);
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.exceptions) {
+      setExceptions(wsData.exceptions);
+    }
+  };
+
+  const handleResolveAllExceptions = async () => {
+    setExceptions((prev) =>
+      prev.map((ex) => ({ ...ex, status: 'RESOLVED', resolvedAt: new Date().toISOString() }))
+    );
+    addAuditLog('RESOLVE_ALL_EXCEPTIONS', 'EXCEPTION_RECORD', 'ALL');
+    await resolveAllExceptionsAction();
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.exceptions) {
+      setExceptions(wsData.exceptions);
+    }
   };
 
   const handleAddReferenceData = async (item: Omit<ReferenceData, 'id'>) => {
@@ -780,7 +799,11 @@ export default function InvestmentPlatformPage() {
         )}
 
         {activeTab === 'exceptions' && (
-          <ExceptionCenter exceptions={exceptions} onResolveException={handleResolveException} />
+          <ExceptionCenter
+            exceptions={exceptions}
+            onResolveException={handleResolveException}
+            onResolveAllExceptions={handleResolveAllExceptions}
+          />
         )}
 
         {activeTab === 'audit' && (

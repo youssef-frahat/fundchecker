@@ -296,3 +296,31 @@ export async function fetchHistoricalFileRowsAction(fileId: string): Promise<{
     };
   }
 }
+
+export async function resolveExceptionAction(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const caller = await getAuthenticatedServerUser();
+    if (!caller) {
+      return { success: false, error: '401 Unauthorized: Authentication required.' };
+    }
+    const { resolveExceptionInDb } = await import('@/lib/repositories/exceptionRepository');
+    const ok = await resolveExceptionInDb(id, caller.fullName || caller.email);
+    return { success: ok };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Failed to resolve exception.' };
+  }
+}
+
+export async function resolveAllExceptionsAction(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const caller = await getAuthenticatedServerUser();
+    if (!caller) {
+      return { success: false, error: '401 Unauthorized: Authentication required.' };
+    }
+    const { resolveAllExceptionsInDb } = await import('@/lib/repositories/exceptionRepository');
+    const ok = await resolveAllExceptionsInDb(caller.fullName || caller.email);
+    return { success: ok };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Failed to resolve all exceptions.' };
+  }
+}

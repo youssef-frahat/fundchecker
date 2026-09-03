@@ -52,21 +52,20 @@ export async function fetchChecklistsFromDb(): Promise<ChecklistItem[]> {
         (item.reopened_by_name && String(item.reopened_by_name).startsWith('APPROVED_BY:')) ||
         item.reopen_reason === 'APPROVED';
 
+      const approvedAt = item.approved_at
+        ? String(item.approved_at)
+        : (item.is_approved || item.status === 'APPROVED' || hasLegacyReopenedApproved) && item.reopened_at
+        ? String(item.reopened_at)
+        : undefined;
+
       const isApproved =
-        Boolean(item.is_approved) ||
-        item.status === 'APPROVED' ||
-        Boolean(hasLegacyReopenedApproved);
+        (Boolean(item.is_approved) || item.status === 'APPROVED' || Boolean(hasLegacyReopenedApproved)) &&
+        isFromCurrentCairoShift(approvedAt);
 
       const approvedByName = item.approved_by_name
         ? String(item.approved_by_name)
         : item.reopened_by_name && String(item.reopened_by_name).startsWith('APPROVED_BY:')
         ? String(item.reopened_by_name).replace('APPROVED_BY: ', '')
-        : undefined;
-
-      const approvedAt = item.approved_at
-        ? String(item.approved_at)
-        : isApproved && item.reopened_at
-        ? String(item.reopened_at)
         : undefined;
 
       const isLateResolved = item.reopen_reason && String(item.reopen_reason).startsWith('LATE_RESOLVED:');

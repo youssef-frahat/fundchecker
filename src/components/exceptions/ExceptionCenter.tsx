@@ -1,21 +1,22 @@
-// Exception Center Component (White & Emerald Green Theme)
-
 'use client';
 
 import React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, CheckCheck } from 'lucide-react';
 import { ExceptionRecord } from '@/lib/types';
 
 interface ExceptionCenterProps {
   exceptions: ExceptionRecord[];
   onResolveException: (id: string) => void;
+  onResolveAllExceptions?: () => void;
 }
 
-export function ExceptionCenter({ exceptions, onResolveException }: ExceptionCenterProps) {
+export function ExceptionCenter({ exceptions, onResolveException, onResolveAllExceptions }: ExceptionCenterProps) {
+  const openCount = exceptions.filter((e) => e.status === 'OPEN').length;
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
       {/* Top Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-rose-600" />
@@ -28,11 +29,23 @@ export function ExceptionCenter({ exceptions, onResolveException }: ExceptionCen
           </p>
         </div>
 
-        <div className="text-xs font-mono text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
-          <span>Open Exceptions: </span>
-          <span className="text-rose-700 font-bold">
-            {exceptions.filter((e) => e.status === 'OPEN').length}
-          </span>
+        <div className="flex items-center gap-3">
+          <div className="text-xs font-mono text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+            <span>Open Exceptions: </span>
+            <span className="text-rose-700 font-bold">
+              {openCount}
+            </span>
+          </div>
+
+          {openCount > 0 && onResolveAllExceptions && (
+            <button
+              onClick={onResolveAllExceptions}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-1.5 rounded-xl text-xs transition shadow-sm"
+            >
+              <CheckCheck className="w-4 h-4" />
+              Resolve All ({openCount})
+            </button>
+          )}
         </div>
       </div>
 
