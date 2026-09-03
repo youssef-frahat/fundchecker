@@ -743,12 +743,12 @@ export async function exportTransferSheetBatchExcel(
     { header: 'Symbol Code', key: 'symbolCode', width: 16 },
     { header: 'Fund Name', key: 'symbolName', width: 34 },
     { header: 'Actual Symbol', key: 'actualSymbol', width: 20 },
-    { header: 'System Buy (استقبال)', key: 'systemBuy', width: 22 },
-    { header: 'System Sell (تحويل)', key: 'systemSell', width: 22 },
+    { header: 'System Buy (تحويل للصندوق)', key: 'systemBuy', width: 24 },
+    { header: 'System Sell (استقبال من الصندوق)', key: 'systemSell', width: 24 },
     { header: 'System Net (Sell - Buy)', key: 'systemNet', width: 24 },
     { header: 'Adjustment Amount', key: 'adjustment', width: 22 },
     { header: 'Final Transfer Amount', key: 'finalTransfer', width: 24 },
-    { header: 'Transfer Action', key: 'action', width: 26 },
+    { header: 'Transfer Action', key: 'action', width: 28 },
   ];
 
   const thinBorder: Partial<ExcelJS.Borders> = {
@@ -789,9 +789,9 @@ export async function exportTransferSheetBatchExcel(
 
     const finalVal = line.finalTransferAmount || 0;
     const actionText = finalVal > 0
-      ? 'تحويل من الصندوق (Transfer)'
+      ? 'استقبال من الصندوق (Receive from Fund)'
       : finalVal < 0
-      ? 'استقبال للصندوق (Receive)'
+      ? 'تحويل إلى الصندوق (Transfer to Fund)'
       : 'لا يوجد تحويل (-)';
 
     const addedRow = ws.addRow({
