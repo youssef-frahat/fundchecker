@@ -147,22 +147,25 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
       currentCategory: line.adjustmentCategory || 'MANUAL_ADJUSTMENT',
     });
     setAdjustmentCategory(line.adjustmentCategory || 'MANUAL_ADJUSTMENT');
-    setAdjustmentAmountInput(String(line.adjustmentAmount || 0));
+    setAdjustmentAmountInput(String(line.finalTransferAmount !== undefined ? line.finalTransferAmount : (line.systemNetAmount + (line.adjustmentAmount || 0))));
     setAdjustmentReason(line.adjustmentReason || '');
     setAdjustmentError(null);
   };
 
   const handleSaveAdjustment = async () => {
     if (!editingModal) return;
-    const numVal = parseFloat(adjustmentAmountInput);
-    if (isNaN(numVal)) {
-      setAdjustmentError('Please enter a valid numeric adjustment amount.');
+    const targetFinal = parseFloat(adjustmentAmountInput);
+    if (isNaN(targetFinal)) {
+      setAdjustmentError('Please enter a valid numeric transfer amount.');
       return;
     }
     if (!adjustmentReason || adjustmentReason.trim().length < 1) {
       setAdjustmentError('Mandatory justification reason is required.');
       return;
     }
+
+    // Calculated adjustment delta to reach the target final transfer amount:
+    const calculatedAdjustmentDelta = targetFinal - editingModal.systemNet;
 
     try {
       setIsSubmittingAdjustment(true);
@@ -172,7 +175,7 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
           editingModal.symbolCode,
           editingModal.systemNet,
           editingModal.currentAdjustment,
-          numVal,
+          calculatedAdjustmentDelta,
           adjustmentCategory,
           adjustmentReason.trim()
         );
@@ -529,10 +532,10 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                 </select>
               </div>
 
-              {/* Adjustment Amount Input */}
+              {/* Final Transfer Amount Input */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Adjustment Amount (EGP) <span className="text-rose-500">*</span>
+                  Final Transfer Amount (EGP) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -540,20 +543,20 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                   value={adjustmentAmountInput}
                   onChange={(e) => setAdjustmentAmountInput(e.target.value)}
                   className="w-full text-sm font-mono px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. -500.00 or +1250.00"
+                  placeholder="Enter the final amount to transfer"
                 />
                 <p className="text-[11px] text-slate-600 mt-1">
-                  Enter positive value to add cash, negative value to deduct cash.
+                  This value is the exact final transfer amount that will be sent for this fund.
                 </p>
               </div>
 
-              {/* Projected Final Transfer */}
+              {/* Calculated Adjustment Difference (Delta) */}
               <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-blue-900 font-bold">Projected Final Transfer Amount:</span>
+                  <span className="text-blue-900 font-bold">Adjustment Difference (Delta):</span>
                   <span className="font-mono font-bold text-blue-900 text-sm">
                     {formatFinancialNumber(
-                      editingModal.systemNet + (parseFloat(adjustmentAmountInput) || 0)
+                      (parseFloat(adjustmentAmountInput) || 0) - editingModal.systemNet
                     )}{' '}
                     EGP
                   </span>
