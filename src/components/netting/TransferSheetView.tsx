@@ -19,6 +19,7 @@ import {
   Sparkles,
   UploadCloud,
   FileSpreadsheet,
+  PlusCircle,
 } from 'lucide-react';
 import { AdjustmentCategory, NettingRow, TransferSheetBatch, TransferSheetLine, UserRole } from '@/lib/types';
 import { exportTransferSheetBatchExcel } from '@/lib/excel-engine';
@@ -46,6 +47,7 @@ interface TransferSheetViewProps {
     reason: string
   ) => Promise<void>;
   onReviewSingleFund?: (symbolCode: string, newStatus: 'UNDER_REVIEW' | 'APPROVED') => void;
+  onNewBatch?: () => void;
 }
 
 const CATEGORY_LABELS: Record<AdjustmentCategory, string> = {
@@ -90,6 +92,7 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
   onCheckerApprove,
   onNavigateToUpload,
   onAdjustLine,
+  onNewBatch,
 }) => {
   const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'EGP' | 'USD'>('ALL');
 
@@ -316,9 +319,20 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
           )}
 
           {isLocked && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-100 rounded-xl border border-emerald-300">
-              <Lock className="w-4 h-4 text-emerald-600" />
-              Transfer Batch Locked
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-100 rounded-xl border border-emerald-300">
+                <Lock className="w-4 h-4 text-emerald-600" />
+                Transfer Batch Locked
+              </div>
+              {onNewBatch && (
+                <button
+                  onClick={onNewBatch}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  + New Transfer Sheet
+                </button>
+              )}
             </div>
           )}
         </div>

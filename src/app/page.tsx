@@ -371,6 +371,18 @@ export default function InvestmentPlatformPage() {
     );
   };
 
+  const handleNewTransferSheet = () => {
+    setCurrentTransferBatch(null);
+    setReviewStatus('DRAFT');
+    setMakerName('');
+    setCheckerName('');
+    setPerFundReviewStates({});
+    const uploaderEl = document.getElementById('allocation-uploader-section');
+    if (uploaderEl) {
+      uploaderEl.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   const handleToggleChecklist = async (itemId: string, nextStatus: boolean = true) => {
     if (!currentUser) return;
     const userEmail = currentUser.email;
@@ -747,7 +759,7 @@ export default function InvestmentPlatformPage() {
 
         {(activeTab === 'transfers' || activeTab === 'netting') && (
           <div className="space-y-8">
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+            <div id="allocation-uploader-section" className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
               <div className="mb-4">
                 <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                   <FileSpreadsheet className="w-5 h-5 text-purple-600" />
@@ -782,6 +794,7 @@ export default function InvestmentPlatformPage() {
               onNavigateToUpload={() => setActiveTab('orders')}
               onAdjustLine={handleAdjustTransferLine}
               onReviewSingleFund={handleReviewSingleFund}
+              onNewBatch={handleNewTransferSheet}
             />
           </div>
         )}
