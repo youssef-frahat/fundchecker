@@ -39,7 +39,6 @@ export async function createTransferBatchWithLines(
     system_buy_amount: l.systemBuyAmount,
     system_sell_amount: l.systemSellAmount,
     adjustment_amount: l.adjustmentAmount || 0,
-    is_manually_adjusted: false,
   }));
 
   try {
@@ -91,7 +90,6 @@ export async function createTransferBatchWithLines(
       system_buy_amount: l.systemBuyAmount,
       system_sell_amount: l.systemSellAmount,
       adjustment_amount: l.adjustmentAmount || 0,
-      is_manually_adjusted: false,
     }));
 
     const { error: linesErr } = await supabase.from('transfer_sheet_lines').insert(rowsToInsert);
@@ -242,7 +240,6 @@ export async function recordTransferLineAdjustment(
       adjustment_amount: newAdjustmentAmount,
       adjustment_category: adjustmentCategory,
       adjustment_reason: reason,
-      is_manually_adjusted: newAdjustmentAmount !== 0,
       updated_at: new Date().toISOString(),
     })
     .eq('id', lineId);
