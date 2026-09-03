@@ -159,8 +159,8 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
       setAdjustmentError('Please enter a valid numeric adjustment amount.');
       return;
     }
-    if (!adjustmentReason || adjustmentReason.trim().length < 10) {
-      setAdjustmentError('Mandatory justification reason must be at least 10 characters long.');
+    if (!adjustmentReason || adjustmentReason.trim().length < 1) {
+      setAdjustmentError('Mandatory justification reason is required.');
       return;
     }
 
@@ -569,17 +569,17 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                   rows={3}
                   value={adjustmentReason}
                   onChange={(e) => setAdjustmentReason(e.target.value)}
-                  placeholder="State the exact business reason for this adjustment (minimum 10 characters)..."
+                  placeholder="State the business reason for this adjustment..."
                   className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex justify-between items-center text-[10px] text-slate-600 mt-1">
-                  <span>Minimum 10 characters required for audit trail</span>
+                  <span>Mandatory reason for audit trail</span>
                   <span
                     className={
-                      adjustmentReason.trim().length >= 10 ? 'text-emerald-600 font-bold' : 'text-slate-600'
+                      adjustmentReason.trim().length >= 1 ? 'text-emerald-600 font-bold' : 'text-slate-500'
                     }
                   >
-                    {adjustmentReason.trim().length}/10
+                    {adjustmentReason.trim().length > 0 ? `${adjustmentReason.trim().length} char(s)` : 'Required'}
                   </span>
                 </div>
               </div>
@@ -598,7 +598,7 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
               <button
                 type="button"
                 onClick={handleSaveAdjustment}
-                disabled={isSubmittingAdjustment || adjustmentReason.trim().length < 10}
+                disabled={isSubmittingAdjustment || adjustmentReason.trim().length < 1}
                 className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-xs transition"
               >
                 {isSubmittingAdjustment ? 'Saving...' : 'Save Adjustment'}

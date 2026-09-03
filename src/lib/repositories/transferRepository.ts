@@ -233,14 +233,11 @@ export async function recordTransferLineAdjustment(
 ): Promise<boolean> {
   const supabase = await getDbClient();
 
-  // 1. Update line adjustment amount and category
+  // 1. Update line adjustment amount
   const { error: lineErr } = await supabase
     .from('transfer_sheet_lines')
     .update({
       adjustment_amount: newAdjustmentAmount,
-      adjustment_category: adjustmentCategory,
-      adjustment_reason: reason,
-      updated_at: new Date().toISOString(),
     })
     .eq('id', lineId);
 

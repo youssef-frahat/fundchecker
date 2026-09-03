@@ -145,8 +145,8 @@ export async function adjustTransferLineAction(
       return { success: false, error: '401 Unauthorized.' };
     }
 
-    if (!reason || reason.trim().length < 10) {
-      return { success: false, error: 'Mandatory reason must be at least 10 characters explaining the adjustment.' };
+    if (!reason || reason.trim().length < 1) {
+      return { success: false, error: 'Mandatory justification reason is required for audit trail.' };
     }
 
     const validCategories: AdjustmentCategory[] = [
