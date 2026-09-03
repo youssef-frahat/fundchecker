@@ -113,7 +113,7 @@ export function Navbar({
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            أوامر التداول (Orders)
+            Trade Orders
           </button>
 
           <button
@@ -125,7 +125,7 @@ export function Navbar({
             }`}
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
-            التحويلات والمقاصة (Transfers)
+            Cash Transfers
           </button>
 
           <button
@@ -137,7 +137,7 @@ export function Navbar({
             }`}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            المهام اليومية (Checklists)
+            Checklists
           </button>
 
           <button
@@ -149,7 +149,7 @@ export function Navbar({
             }`}
           >
             <AlertTriangle className="w-3.5 h-3.5" />
-            الملاحظات (Exceptions)
+            Exceptions
             {exceptionsCount > 0 && (
               <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
                 {exceptionsCount}
@@ -166,7 +166,7 @@ export function Navbar({
             }`}
           >
             <Lock className="w-3.5 h-3.5" />
-            سجل التدقيق (Audit)
+            Audit Trail
           </button>
 
           {currentUser.role === 'SUPER_ADMIN' && (
@@ -179,7 +179,7 @@ export function Navbar({
               }`}
             >
               <Database className="w-3.5 h-3.5" />
-              بيانات الصناديق (Admin)
+              Reference Data
             </button>
           )}
         </nav>

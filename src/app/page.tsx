@@ -71,6 +71,7 @@ export default function InvestmentPlatformPage() {
     fullName: string;
     role: UserRole;
   } | null>(null);
+  const [isVerifyingSession, setIsVerifyingSession] = useState<boolean>(true);
 
   const [activeTab, setActiveTab] = useState<string>('orders');
   const [currentTransferBatch, setCurrentTransferBatch] = useState<TransferSheetBatch | null>(null);
@@ -95,28 +96,39 @@ export default function InvestmentPlatformPage() {
 
   useEffect(() => {
     async function loadDbData() {
-      const [{ user: sessionUser }, wsResult] = await Promise.all([
-        getCurrentSessionUserAction(),
-        fetchWorkspaceDataAction(),
-      ]);
+      try {
+        if (typeof window !== 'undefined') {
+          const savedTab = localStorage.getItem('investment_active_tab');
+          if (savedTab) setActiveTab(savedTab);
+        }
 
-      if (sessionUser) {
-        setCurrentUser(sessionUser);
-      }
-      if (wsResult) {
-        if (wsResult.dbError) {
-          setDbSetupError(wsResult.dbError);
+        const [{ user: sessionUser }, wsResult] = await Promise.all([
+          getCurrentSessionUserAction(),
+          fetchWorkspaceDataAction(),
+        ]);
+
+        if (sessionUser) {
+          setCurrentUser(sessionUser);
         }
-        setReferenceDataList(wsResult.refData || []);
-        setFundRules(wsResult.fundRules || []);
-        setUploadedFiles(wsResult.uploadedFiles || []);
-        setExceptions(wsResult.exceptions || []);
-        setAuditLogs(wsResult.auditLogs || []);
-        setChecklists(wsResult.checklists || []);
-        setUsers(wsResult.users || []);
-        if (wsResult.latestBatch) {
-          setCurrentTransferBatch(wsResult.latestBatch);
+        if (wsResult) {
+          if (wsResult.dbError) {
+            setDbSetupError(wsResult.dbError);
+          }
+          setReferenceDataList(wsResult.refData || []);
+          setFundRules(wsResult.fundRules || []);
+          setUploadedFiles(wsResult.uploadedFiles || []);
+          setExceptions(wsResult.exceptions || []);
+          setAuditLogs(wsResult.auditLogs || []);
+          setChecklists(wsResult.checklists || []);
+          setUsers(wsResult.users || []);
+          if (wsResult.latestBatch) {
+            setCurrentTransferBatch(wsResult.latestBatch);
+          }
         }
+      } catch (err) {
+        console.warn('Session or workspace data load notice:', err);
+      } finally {
+        setIsVerifyingSession(false);
       }
     }
     loadDbData();
@@ -619,6 +631,17 @@ export default function InvestmentPlatformPage() {
     return await resetUserPasswordAction(email);
   };
 
+  if (isVerifyingSession) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4 text-slate-700">
+        <div className="w-9 h-9 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs font-mono text-slate-500 font-semibold uppercase tracking-wider">
+          Verifying Session &amp; Syncing Workspace...
+        </p>
+      </div>
+    );
+  }
+
   if (!currentUser) {
     return <LoginForm onLoginSuccess={setCurrentUser} />;
   }
@@ -651,6 +674,9 @@ export default function InvestmentPlatformPage() {
         activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('investment_active_tab', tab);
+          }
           fetchWorkspaceDataAction().then((wsData) => {
             if (wsData.success) {
               if (wsData.checklists) setChecklists(wsData.checklists);
