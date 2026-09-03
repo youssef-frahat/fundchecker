@@ -61,7 +61,7 @@ import {
 } from '@/app/actions/userActions';
 import { getCurrentSessionUserAction, logoutUserAction } from '@/app/actions/authActions';
 import { applyFundRules } from '@/lib/rule-engine';
-import { FundReviewState } from '@/lib/netting-engine';
+import { calculateNettingSheet, FundReviewState } from '@/lib/netting-engine';
 import { TransferSheetBatch } from '@/lib/types';
 
 export default function InvestmentPlatformPage() {
@@ -261,7 +261,11 @@ export default function InvestmentPlatformPage() {
     : [];
 
 
-  const effectiveNettingRows: NettingRow[] = currentTransferBatch?.lines && currentTransferBatch.lines.length > 0
+  const fallbackNetting = rawTransactions.length > 0 && referenceDataList.length > 0
+    ? calculateNettingSheet(rawTransactions, referenceDataList, 'symbol', perFundReviewStates)
+    : null;
+
+  const effectiveNettingRows: NettingRow[] = (currentTransferBatch?.lines && currentTransferBatch.lines.length > 0)
     ? currentTransferBatch.lines.map((l) => ({
         symbolCode: l.symbolCode,
         symbolName: l.symbolName,
@@ -277,11 +281,11 @@ export default function InvestmentPlatformPage() {
           ? 'UNDER_REVIEW'
           : 'DRAFT') as 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED',
       }))
-    : [];
+    : (fallbackNetting?.rows || []);
 
-  const effectiveTotalBuy = currentTransferBatch ? currentTransferBatch.totalBuyAmount : 0;
-  const effectiveTotalSell = currentTransferBatch ? currentTransferBatch.totalSellAmount : 0;
-  const effectiveTotalNet = currentTransferBatch ? currentTransferBatch.totalNetAmount : 0;
+  const effectiveTotalBuy = currentTransferBatch ? currentTransferBatch.totalBuyAmount : (fallbackNetting?.totalBuy || 0);
+  const effectiveTotalSell = currentTransferBatch ? currentTransferBatch.totalSellAmount : (fallbackNetting?.totalSell || 0);
+  const effectiveTotalNet = currentTransferBatch ? currentTransferBatch.totalNetAmount : (fallbackNetting?.totalNet || 0);
 
   const handleMakerSubmit = async () => {
     if (currentTransferBatch) {
@@ -638,14 +642,13 @@ export default function InvestmentPlatformPage() {
         activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
-          if (tab === 'checklists' || tab === 'audit') {
-            fetchWorkspaceDataAction().then((wsData) => {
-              if (wsData.success) {
-                if (wsData.checklists) setChecklists(wsData.checklists);
-                if (wsData.auditLogs) setAuditLogs(wsData.auditLogs);
-              }
-            });
-          }
+          fetchWorkspaceDataAction().then((wsData) => {
+            if (wsData.success) {
+              if (wsData.checklists) setChecklists(wsData.checklists);
+              if (wsData.auditLogs) setAuditLogs(wsData.auditLogs);
+              if (wsData.latestBatch) setCurrentTransferBatch(wsData.latestBatch);
+            }
+          });
         }}
         pendingReviewsCount={pendingReviewsCount}
         exceptionsCount={openExceptionsCount}
@@ -722,7 +725,7 @@ export default function InvestmentPlatformPage() {
               checkerName={checkerName}
               onMakerSubmit={handleMakerSubmit}
               onCheckerApprove={handleCheckerApprove}
-              onNavigateToUpload={() => {}}
+              onNavigateToUpload={() => setActiveTab('orders')}
               onAdjustLine={handleAdjustTransferLine}
               onReviewSingleFund={handleReviewSingleFund}
             />
