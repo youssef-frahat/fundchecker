@@ -80,6 +80,7 @@ export default function InvestmentPlatformPage() {
   const [fundRules, setFundRules] = useState<FundRule[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileRecord[]>([]);
   const [rawTransactions, setRawTransactions] = useState<RawTransactionRow[]>([]);
+  const [serverGeneratedRows, setServerGeneratedRows] = useState<GeneratedTransactionRow[]>([]);
   const [checklists, setChecklists] = useState<ChecklistItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [exceptions, setExceptions] = useState<ExceptionRecord[]>([]);
@@ -180,6 +181,10 @@ export default function InvestmentPlatformPage() {
 
     const report = result.report;
 
+    if (report.transactionGeneratorResult?.generatedRows) {
+      setServerGeneratedRows(report.transactionGeneratorResult.generatedRows);
+    }
+
     // Refresh exceptions and audit logs from database execution report
     if (report.exceptions.length > 0) {
       setExceptions((prev) => [...report.exceptions, ...prev]);
@@ -244,7 +249,7 @@ export default function InvestmentPlatformPage() {
     await saveAuditLogAction(newLog);
   };
 
-  const generatedRows: GeneratedTransactionRow[] = (fundRules.length > 0 && referenceDataList.length > 0)
+  const clientGeneratedRows: GeneratedTransactionRow[] = (fundRules.length > 0 && referenceDataList.length > 0)
     ? rawTransactions.map((tx) => {
         const symClean = tx.symbol.trim().toLowerCase();
         const descClean = tx.symbolDescription.trim().toLowerCase();
@@ -259,6 +264,10 @@ export default function InvestmentPlatformPage() {
         return applyFundRules(tx, fundType, fundRules);
       })
     : [];
+
+  const effectiveGeneratedRows: GeneratedTransactionRow[] = serverGeneratedRows.length > 0
+    ? serverGeneratedRows
+    : clientGeneratedRows;
 
 
   const fallbackNetting = rawTransactions.length > 0 && referenceDataList.length > 0
@@ -687,7 +696,7 @@ export default function InvestmentPlatformPage() {
                 hideCategorySelector={true}
               />
             </div>
-            <TransactionReportTable rows={generatedRows} />
+            <TransactionReportTable rows={effectiveGeneratedRows} />
           </div>
         )}
 

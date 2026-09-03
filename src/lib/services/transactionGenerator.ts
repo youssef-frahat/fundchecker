@@ -16,6 +16,7 @@ export interface GroupedTransactionOutput {
 
 export interface TransactionGeneratorResult {
   groupedOutputs: GroupedTransactionOutput[];
+  generatedRows: GeneratedTransactionRow[];
   totalProductsCount: number;
   totalGeneratedRows: number;
   reportId?: string;
@@ -225,6 +226,7 @@ export async function generateFundTransactions(
 
   return {
     groupedOutputs,
+    generatedRows,
     totalProductsCount: groupedOutputs.length,
     totalGeneratedRows: generatedRows.length,
     reportId,

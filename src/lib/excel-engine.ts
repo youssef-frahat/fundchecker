@@ -84,55 +84,87 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
       const currentCols = { ...bestCols };
 
       row.eachCell((cell, colNumber) => {
-        const text = extractCellValue(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
+        const rawCell = extractCellValue(cell).trim();
+        const text = rawCell.toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]/g, '');
         if (!text) return;
 
         // Skip audit/secondary workflow columns from overtaking primary trade columns
-        if (text.includes('original')) return;
+        if (text.includes('original') || text.includes('أصلي') || text.includes('قديم')) return;
 
-        if (text === 'requestid' || text === 'reqid' || text === 'orderid' || text === 'trid' || text === 'transactionid') {
+        if (
+          text === 'requestid' || text === 'reqid' || text === 'orderid' || text === 'trid' || text === 'transactionid' ||
+          text === 'الطلب' || text === 'رقمطلب' || text === 'رقممعاملة' || text === 'رقمالطلب' || text === 'رقمأمر' || text === 'كودطلب' ||
+          (text.includes('request') && !currentCols.colRequestId) || (text.includes('طلب') && !currentCols.colRequestId)
+        ) {
           currentCols.colRequestId = colNumber;
           matchScore += 5;
-        } else if (text.includes('request') && !currentCols.colRequestId) {
-          currentCols.colRequestId = colNumber;
-          matchScore += 3;
-        } else if (text === 'orderstatus' || text === 'status') {
+        } else if (
+          text === 'orderstatus' || text === 'status' || text === 'حالة' || text === 'حالةالطلب' || text === 'حالةالأمر' ||
+          text.includes('status') || text.includes('حالة')
+        ) {
           currentCols.colOrderStatus = colNumber;
-          matchScore += 2;
-        } else if (text.includes('allocated') && (text.includes('quantity') || text.includes('qty'))) {
-          currentCols.colAllocatedQuantity = colNumber;
           matchScore += 3;
-        } else if (text.includes('mubasher') || text.includes('externalcode') || text.includes('customerno')) {
+        } else if (
+          (text.includes('allocated') && (text.includes('quantity') || text.includes('qty'))) ||
+          text.includes('كميةمخصصة') || text.includes('مخصص')
+        ) {
+          currentCols.colAllocatedQuantity = colNumber;
+          matchScore += 4;
+        } else if (
+          text.includes('mubasher') || text.includes('externalcode') || text.includes('customerno') || text.includes('clientcode') || text.includes('accountno') ||
+          text.includes('مباشر') || text.includes('كودعميل') || text.includes('رقمحساب') || text.includes('رقمعميل')
+        ) {
           currentCols.colMubasherNo = colNumber;
           matchScore += 3;
-        } else if (text.includes('customer') || text.includes('client') || text === 'name') {
+        } else if (
+          text.includes('customer') || text.includes('client') || text.includes('investor') || text === 'name' || text.includes('holder') ||
+          text.includes('عميل') || text.includes('مستثمر') || text === 'اسم' || text.includes('اسمالعميل') || text.includes('اسمالمستثمر')
+        ) {
           currentCols.colCustomerName = colNumber;
           matchScore += 3;
-        } else if (text.includes('side') || text.includes('orderside') || text.includes('type') || text === 'action') {
+        } else if (
+          text.includes('side') || text.includes('orderside') || text.includes('type') || text === 'action' || text.includes('buysell') ||
+          text.includes('نوع') || text.includes('شراء') || text.includes('بيع') || text.includes('عملية') || text.includes('نوعالعملية') || text.includes('نوعالأمر')
+        ) {
           currentCols.colOrderSide = colNumber;
           matchScore += 4;
-        } else if (text === 'symbol' || text === 'symbolcode' || text === 'sym' || text === 'fund') {
+        } else if (
+          text === 'symbol' || text === 'symbolcode' || text === 'sym' || text === 'fund' || text === 'fundcode' || text === 'secid' ||
+          text === 'رمز' || text === 'كود' || text === 'صندوق' || text === 'كودصندوق' || text === 'رمزصندوق' || text === 'كودالورقة'
+        ) {
           currentCols.colSymbol = colNumber;
           matchScore += 5;
-        } else if (text.includes('symboldescription') || text.includes('product') || text.includes('fundname') || text.includes('description')) {
+        } else if (
+          text.includes('symboldescription') || text.includes('product') || text.includes('fundname') || text.includes('description') ||
+          text.includes('اسمصندوق') || text.includes('اسمالصندوق') || text.includes('وصف') || text.includes('منتج')
+        ) {
           currentCols.colSymbolDesc = colNumber;
           matchScore += 4;
-        } else if (text === 'quantity' || text === 'qty' || text.includes('netholdings')) {
+        } else if (
+          text === 'quantity' || text === 'qty' || text.includes('netholdings') || text === 'units' || text === 'shares' ||
+          text === 'كمية' || text === 'الكمية' || text === 'وثائق' || text === 'عددالوثائق' || text.includes('كمية') || text.includes('وثائق')
+        ) {
           currentCols.colQuantity = colNumber;
           matchScore += 4;
-        } else if (text.includes('quantity') && !currentCols.colQuantity) {
-          currentCols.colQuantity = colNumber;
-          matchScore += 2;
-        } else if (text.includes('price') || text.includes('icprice') || text.includes('avgcost')) {
+        } else if (
+          text.includes('price') || text.includes('icprice') || text.includes('nav') || text.includes('avgcost') || text.includes('unitprice') ||
+          text.includes('سعر') || text.includes('سعرالوثيقة') || text.includes('سعرتنفيذ') || text.includes('سعرإقفال')
+        ) {
           currentCols.colPrice = colNumber;
-          matchScore += 3;
-        } else if (text.includes('ordervalue') || text.includes('netsettle') || text.includes('amount') || text.includes('value')) {
+          matchScore += 4;
+        } else if (
+          text.includes('ordervalue') || text.includes('netsettle') || text.includes('amount') || text.includes('value') ||
+          text.includes('قيمة') || text.includes('قيمةالأمر') || text.includes('صافي') || text.includes('تسوية') || text.includes('مبلغ')
+        ) {
           currentCols.colOrderValue = colNumber;
           matchScore += 4;
-        } else if (text.includes('isin')) {
+        } else if (text.includes('isin') || text.includes('أيزن')) {
           currentCols.colIsinCode = colNumber;
           matchScore += 2;
-        } else if (text === 'orderdate' || (text.includes('date') && !text.includes('accepted') && !text.includes('reviewed') && !text.includes('approved') && !text.includes('cancelled') && !text.includes('updated'))) {
+        } else if (
+          text === 'orderdate' || text === 'date' || text.includes('txdate') || text.includes('tradedate') ||
+          text === 'تاريخ' || text === 'تاريخالأمر' || text === 'تاريخالعملية' || (text.includes('تاريخ') && !text.includes('اعتماد'))
+        ) {
           currentCols.colOrderDate = colNumber;
           matchScore += 3;
         }
