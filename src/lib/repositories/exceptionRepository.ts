@@ -83,19 +83,36 @@ export async function fetchOpenExceptions(): Promise<ExceptionRecord[]> {
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function resolveExceptionInDb(id: string, resolvedBy?: string): Promise<boolean> {
   try {
     const supabase = await getDbClient();
+    const userUuid = resolvedBy && UUID_REGEX.test(resolvedBy) ? resolvedBy : null;
+
     const { error } = await supabase
       .from('exceptions')
       .update({
         status: 'RESOLVED',
         resolved_at: new Date().toISOString(),
-        resolved_by: resolvedBy || null,
+        resolved_by: userUuid,
       })
       .eq('id', id);
 
-    return !error;
+    if (error) {
+      console.warn('DB error resolving exception with user ID, retrying without FK:', error.message);
+      const { error: fallbackErr } = await supabase
+        .from('exceptions')
+        .update({
+          status: 'RESOLVED',
+          resolved_at: new Date().toISOString(),
+          resolved_by: null,
+        })
+        .eq('id', id);
+      return !fallbackErr;
+    }
+
+    return true;
   } catch (err) {
     console.warn('Resolve exception error:', err);
     return false;
@@ -105,16 +122,31 @@ export async function resolveExceptionInDb(id: string, resolvedBy?: string): Pro
 export async function resolveAllExceptionsInDb(resolvedBy?: string): Promise<boolean> {
   try {
     const supabase = await getDbClient();
+    const userUuid = resolvedBy && UUID_REGEX.test(resolvedBy) ? resolvedBy : null;
+
     const { error } = await supabase
       .from('exceptions')
       .update({
         status: 'RESOLVED',
         resolved_at: new Date().toISOString(),
-        resolved_by: resolvedBy || null,
+        resolved_by: userUuid,
       })
       .eq('status', 'OPEN');
 
-    return !error;
+    if (error) {
+      console.warn('DB error resolving all exceptions with user ID, retrying without FK:', error.message);
+      const { error: fallbackErr } = await supabase
+        .from('exceptions')
+        .update({
+          status: 'RESOLVED',
+          resolved_at: new Date().toISOString(),
+          resolved_by: null,
+        })
+        .eq('status', 'OPEN');
+      return !fallbackErr;
+    }
+
+    return true;
   } catch (err) {
     console.warn('Resolve all exceptions error:', err);
     return false;
