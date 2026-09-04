@@ -71,14 +71,14 @@ function formatAccountingUI(val: number) {
   }).format(Math.abs(val));
 
   if (val < 0) {
-    // Negative -> RED with parentheses (أحمر بالسالب مع أقواس المحاسبة)
+    // Negative -> RED with accounting parentheses
     return {
       text: `(${formatted})`,
       colorClass: 'text-rose-700 bg-rose-50 border border-rose-200 font-bold',
       inlineColor: 'text-rose-700 font-bold',
     };
   }
-  // Positive -> GREEN (أخضر بالموجب)
+  // Positive -> GREEN
   return {
     text: formatted,
     colorClass: 'text-emerald-700 bg-emerald-50 border border-emerald-200 font-bold',

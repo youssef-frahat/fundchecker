@@ -16,6 +16,7 @@ import { ReferenceDataAdmin } from '@/components/admin/ReferenceDataAdmin';
 import { UserManagementAdmin } from '@/components/admin/UserManagementAdmin';
 import { SystemHealthAdmin } from '@/components/admin/SystemHealthAdmin';
 import { ScheduleReminderSnackbar } from '@/components/common/ScheduleReminderSnackbar';
+import { FourEyesAlertSnackbar } from '@/components/common/FourEyesAlertSnackbar';
 
 import {
   AdjustmentCategory,
@@ -100,6 +101,10 @@ export default function InvestmentPlatformPage() {
   const [checkerName, setCheckerName] = useState<string>('');
   const [perFundReviewStates, setPerFundReviewStates] = useState<Record<string, FundReviewState>>({});
   const [dbSetupError, setDbSetupError] = useState<string | null>(null);
+  const [fourEyesError, setFourEyesError] = useState<{
+    message: string;
+    makerName?: string;
+  } | null>(null);
 
   useEffect(() => {
     async function loadDbData() {
@@ -357,10 +362,32 @@ export default function InvestmentPlatformPage() {
 
   const handleCheckerApprove = async () => {
     if (currentTransferBatch) {
-      await reviewTransferBatchAction(currentTransferBatch.id, 'APPROVE');
+      const res = await reviewTransferBatchAction(currentTransferBatch.id, 'APPROVE');
+      if (!res.success) {
+        if (res.error?.includes('Four-Eyes') || res.error?.toLowerCase().includes('maker cannot approve')) {
+          setFourEyesError({
+            message: res.error,
+            makerName: currentTransferBatch.makerName || makerName,
+          });
+        } else {
+          setProcessingError(res.error || 'Failed to approve transfer sheet batch.');
+        }
+        return;
+      }
       const freshBatch = await getLatestTransferBatchAction();
       if (freshBatch) setCurrentTransferBatch(freshBatch);
+    } else {
+      const effectiveMaker = makerName || '';
+      const userIdentities = [currentUser?.fullName, currentUser?.email, currentUser?.id].filter(Boolean);
+      if (effectiveMaker && userIdentities.includes(effectiveMaker)) {
+        setFourEyesError({
+          message: `Four-Eyes Principle Violation: Maker cannot approve their own submitted transfer sheet (${effectiveMaker}). A different checker must review.`,
+          makerName: effectiveMaker,
+        });
+        return;
+      }
     }
+
     setReviewStatus('APPROVED');
     setCheckerName(currentUser?.fullName || 'Checker');
 
@@ -378,6 +405,18 @@ export default function InvestmentPlatformPage() {
   };
 
   const handleReviewSingleFund = (symbolCode: string, newStatus: 'UNDER_REVIEW' | 'APPROVED') => {
+    if (newStatus === 'APPROVED') {
+      const fundMaker = perFundReviewStates[symbolCode]?.makerName || makerName;
+      const userIdentities = [currentUser?.fullName, currentUser?.email, currentUser?.id].filter(Boolean);
+      if (fundMaker && userIdentities.includes(fundMaker)) {
+        setFourEyesError({
+          message: `Four-Eyes Principle Violation: Maker cannot approve their own submitted fund sheet for ${symbolCode} (${fundMaker}). A different checker must review.`,
+          makerName: fundMaker,
+        });
+        return;
+      }
+    }
+
     setPerFundReviewStates((prev) => ({
       ...prev,
       [symbolCode]: {
@@ -921,6 +960,14 @@ export default function InvestmentPlatformPage() {
 
       {/* Operational Cycle Reminder Snackbar (e.g. Day 18, Thursdays, Wednesdays, Mondays) */}
       <ScheduleReminderSnackbar referenceDataList={referenceDataList} />
+
+      {/* Four-Eyes Principle Enforcement Alert Snackbar */}
+      <FourEyesAlertSnackbar
+        isOpen={Boolean(fourEyesError)}
+        onClose={() => setFourEyesError(null)}
+        makerName={fourEyesError?.makerName}
+        message={fourEyesError?.message}
+      />
     </div>
   );
 }

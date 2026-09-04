@@ -277,7 +277,7 @@ export async function reviewTransferBatchAction(
     const supabase = await getDbClient();
     const { data: batch, error: batchErr } = await supabase
       .from('transfer_sheet_batches')
-      .select('maker_id, status')
+      .select('maker_id, maker_name, status')
       .eq('id', batchId)
       .single();
 
@@ -286,10 +286,15 @@ export async function reviewTransferBatchAction(
     }
 
     // FOUR-EYES PRINCIPLE: Submitter/Maker cannot approve own work
-    if (decision === 'APPROVE' && batch.maker_id === currentUser.id) {
+    const isSameMaker =
+      (batch.maker_id && batch.maker_id === currentUser.id) ||
+      (batch.maker_name && batch.maker_name === currentUser.fullName) ||
+      (batch.maker_id && batch.maker_id === currentUser.email);
+
+    if (decision === 'APPROVE' && isSameMaker) {
       return {
         success: false,
-        error: 'Four-Eyes Principle Violation: Maker cannot approve their own submitted transfer sheet batch. A different checker must review.',
+        error: `Four-Eyes Principle Violation: Maker cannot approve their own submitted transfer sheet batch (${batch.maker_name || currentUser.fullName}). A different checker must review.`,
       };
     }
 
