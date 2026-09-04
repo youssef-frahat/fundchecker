@@ -27,36 +27,73 @@ export function useExceptionWorkspace({
   const [exceptions, setExceptions] = useState<ExceptionRecord[]>([]);
 
   const handleResolveException = async (id: string) => {
+    const previousExceptions = [...exceptions];
     setExceptions((prev) =>
       prev.map((ex) => (ex.id === id ? { ...ex, status: 'RESOLVED', resolvedAt: new Date().toISOString() } : ex))
     );
     onAuditLog('RESOLVE_EXCEPTION', 'EXCEPTION_RECORD', id);
-    await resolveExceptionAction(id);
-    const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.exceptions) {
-      setExceptions(wsData.exceptions);
+
+    try {
+      const res = await resolveExceptionAction(id);
+      if (!res.success) {
+        // Rollback optimistic state on server failure
+        setExceptions(previousExceptions);
+        onError(formatUserFriendlyError(res.error || 'Failed to resolve exception in database.'));
+        return;
+      }
+
+      const wsData = await fetchWorkspaceDataAction();
+      if (wsData.success && wsData.exceptions) {
+        setExceptions(wsData.exceptions);
+      }
+      if (onRefreshAuditLogs) await onRefreshAuditLogs();
+    } catch (err) {
+      setExceptions(previousExceptions);
+      onError(formatUserFriendlyError(err));
     }
   };
 
   const handleResolveAllExceptions = async () => {
+    const openExceptions = exceptions.filter((e) => e.status === 'OPEN');
+    if (openExceptions.length === 0) return;
+    const openIds = openExceptions.map((e) => e.id);
+    const previousExceptions = [...exceptions];
+
     setExceptions((prev) =>
-      prev.map((ex) => ({ ...ex, status: 'RESOLVED', resolvedAt: new Date().toISOString() }))
+      prev.map((ex) => (ex.status === 'OPEN' ? { ...ex, status: 'RESOLVED', resolvedAt: new Date().toISOString() } : ex))
     );
     onAuditLog('RESOLVE_ALL_EXCEPTIONS', 'EXCEPTION_RECORD', 'ALL');
-    await resolveAllExceptionsAction();
-    const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.exceptions) {
-      setExceptions(wsData.exceptions);
+
+    try {
+      const res = await resolveAllExceptionsAction(openIds);
+      if (!res.success) {
+        // Rollback optimistic state on server failure
+        setExceptions(previousExceptions);
+        onError(formatUserFriendlyError(res.error || 'Failed to resolve exceptions in database.'));
+        return;
+      }
+
+      const wsData = await fetchWorkspaceDataAction();
+      if (wsData.success && wsData.exceptions) {
+        setExceptions(wsData.exceptions);
+      }
+      if (onRefreshAuditLogs) await onRefreshAuditLogs();
+    } catch (err) {
+      setExceptions(previousExceptions);
+      onError(formatUserFriendlyError(err));
     }
   };
 
   const handleCleanResolvedExceptions = async () => {
+    const previousExceptions = [...exceptions];
     try {
       // Optimistically clear resolved exceptions from UI
       setExceptions((prev) => prev.filter((e) => e.status !== 'RESOLVED'));
       const res = await cleanResolvedExceptionsAction();
       if (!res.success) {
+        setExceptions(previousExceptions);
         onError(formatUserFriendlyError(res.error || 'Failed to clear resolved exceptions.'));
+        return;
       }
       const wsData = await fetchWorkspaceDataAction();
       if (wsData.success && wsData.exceptions) {
@@ -64,6 +101,7 @@ export function useExceptionWorkspace({
       }
       if (onRefreshAuditLogs) await onRefreshAuditLogs();
     } catch (err) {
+      setExceptions(previousExceptions);
       onError(formatUserFriendlyError(err));
     }
   };

@@ -352,25 +352,25 @@ export async function resolveExceptionAction(id: string): Promise<{ success: boo
   try {
     const caller = await getAuthenticatedServerUser();
     if (!caller) {
-      return { success: false, error: '401 Unauthorized: Authentication required.' };
+      return { success: false, error: '401 Unauthorized: Session expired or invalid. Please sign in again.' };
     }
     const { resolveExceptionInDb } = await import('@/lib/repositories/exceptionRepository');
-    const ok = await resolveExceptionInDb(id, caller.id);
-    return { success: ok };
+    const result = await resolveExceptionInDb(id, caller.id);
+    return { success: result.success, error: result.error };
   } catch (err: unknown) {
     return { success: false, error: err instanceof Error ? err.message : 'Failed to resolve exception.' };
   }
 }
 
-export async function resolveAllExceptionsAction(): Promise<{ success: boolean; error?: string }> {
+export async function resolveAllExceptionsAction(ids?: string[]): Promise<{ success: boolean; count?: number; error?: string }> {
   try {
     const caller = await getAuthenticatedServerUser();
     if (!caller) {
-      return { success: false, error: '401 Unauthorized: Authentication required.' };
+      return { success: false, error: '401 Unauthorized: Session expired or invalid. Please sign in again.' };
     }
     const { resolveAllExceptionsInDb } = await import('@/lib/repositories/exceptionRepository');
-    const ok = await resolveAllExceptionsInDb(caller.id);
-    return { success: ok };
+    const result = await resolveAllExceptionsInDb(ids, caller.id);
+    return { success: result.success, count: result.count, error: result.error };
   } catch (err: unknown) {
     return { success: false, error: err instanceof Error ? err.message : 'Failed to resolve all exceptions.' };
   }
@@ -380,7 +380,7 @@ export async function cleanResolvedExceptionsAction(): Promise<{ success: boolea
   try {
     const caller = await getAuthenticatedServerUser();
     if (!caller) {
-      return { success: false, count: 0, error: '401 Unauthorized: Authentication required.' };
+      return { success: false, count: 0, error: '401 Unauthorized: Session expired or invalid. Please sign in again.' };
     }
     const { cleanResolvedExceptionsInDb } = await import('@/lib/repositories/exceptionRepository');
     const result = await cleanResolvedExceptionsInDb();
@@ -407,7 +407,7 @@ export async function cleanResolvedExceptionsAction(): Promise<{ success: boolea
       });
     }
 
-    return { success: result.success, count: result.count };
+    return { success: result.success, count: result.count, error: result.error };
   } catch (err: unknown) {
     return {
       success: false,

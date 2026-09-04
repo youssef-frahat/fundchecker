@@ -206,13 +206,14 @@ export default function InvestmentPlatformPage() {
     loadDbData();
   }, []);
 
-  // Synchronize checklists and audit logs in real-time across connected users every 8 seconds
+  // Synchronize checklists, exceptions, and audit logs in real-time across connected users every 8 seconds
   useEffect(() => {
-    if (activeTab !== 'checklists' && activeTab !== 'audit') return;
+    if (activeTab !== 'checklists' && activeTab !== 'audit' && activeTab !== 'exceptions') return;
     const interval = setInterval(async () => {
       const wsData = await fetchWorkspaceDataAction();
       if (wsData.success) {
         if (wsData.checklists) checklistWs.setChecklists(wsData.checklists);
+        if (wsData.exceptions) exceptionWs.setExceptions(wsData.exceptions);
         if (wsData.auditLogs && auditLogs.length <= 50) {
           setAuditLogs(wsData.auditLogs);
         }
@@ -478,6 +479,7 @@ export default function InvestmentPlatformPage() {
               if (wsData.auditLogs) setAuditLogs(wsData.auditLogs);
               if (wsData.latestBatch) transferWs.setCurrentTransferBatch(wsData.latestBatch);
               if (wsData.allBatches) transferWs.setAllBatches(wsData.allBatches);
+              if (wsData.exceptions) exceptionWs.setExceptions(wsData.exceptions);
             }
           });
         }}

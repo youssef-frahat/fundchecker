@@ -6,8 +6,8 @@ import { ExceptionRecord } from '@/lib/types';
 
 interface ExceptionCenterProps {
   exceptions: ExceptionRecord[];
-  onResolveException: (id: string) => void;
-  onResolveAllExceptions?: () => void;
+  onResolveException: (id: string) => Promise<void> | void;
+  onResolveAllExceptions?: () => Promise<void> | void;
   onCleanResolvedExceptions?: () => Promise<void> | void;
 }
 
@@ -20,14 +20,36 @@ export function ExceptionCenter({
   const openCount = exceptions.filter((e) => e.status === 'OPEN').length;
   const resolvedCount = exceptions.filter((e) => e.status === 'RESOLVED').length;
   const [isCleaning, setIsCleaning] = useState<boolean>(false);
+  const [isResolvingAll, setIsResolvingAll] = useState<boolean>(false);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const handleClean = async () => {
-    if (!onCleanResolvedExceptions) return;
+    if (!onCleanResolvedExceptions || isCleaning) return;
     try {
       setIsCleaning(true);
       await onCleanResolvedExceptions();
     } finally {
       setIsCleaning(false);
+    }
+  };
+
+  const handleResolveAll = async () => {
+    if (!onResolveAllExceptions || isResolvingAll) return;
+    try {
+      setIsResolvingAll(true);
+      await onResolveAllExceptions();
+    } finally {
+      setIsResolvingAll(false);
+    }
+  };
+
+  const handleResolveOne = async (id: string) => {
+    if (resolvingId) return;
+    try {
+      setResolvingId(id);
+      await onResolveException(id);
+    } finally {
+      setResolvingId(null);
     }
   };
 
@@ -57,11 +79,12 @@ export function ExceptionCenter({
 
           {openCount > 0 && onResolveAllExceptions && (
             <button
-              onClick={onResolveAllExceptions}
-              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-1.5 rounded-xl text-xs transition shadow-sm"
+              onClick={handleResolveAll}
+              disabled={isResolvingAll}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-4 py-1.5 rounded-xl text-xs transition shadow-sm"
             >
               <CheckCheck className="w-4 h-4" />
-              Resolve All ({openCount})
+              {isResolvingAll ? 'Resolving...' : `Resolve All (${openCount})`}
             </button>
           )}
 
@@ -128,10 +151,11 @@ export function ExceptionCenter({
                   <td className="p-3 text-center">
                     {ex.status === 'OPEN' ? (
                       <button
-                        onClick={() => onResolveException(ex.id)}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition shadow-sm"
+                        onClick={() => handleResolveOne(ex.id)}
+                        disabled={resolvingId === ex.id}
+                        className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition shadow-sm"
                       >
-                        Resolve &amp; Re-parse
+                        {resolvingId === ex.id ? 'Resolving...' : 'Resolve & Re-parse'}
                       </button>
                     ) : (
                       <span className="text-emerald-700 font-semibold text-[11px]">Resolved</span>
