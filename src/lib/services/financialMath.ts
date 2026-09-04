@@ -126,3 +126,20 @@ export function formatAccountingString(
   }
   return absFormatted;
 }
+
+/**
+ * Formats an execution / NAV unit price with exact 5 decimal places (e.g. 2.11111)
+ * specifically designed for mutual fund transfers and order pricing.
+ */
+export function formatPriceString(
+  value: number | string | Decimal | null | undefined,
+  decimals: number = 5
+): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const d = toDecimal(value);
+  if (d.isZero()) return '0.00000';
+  return d.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP).toNumber().toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}

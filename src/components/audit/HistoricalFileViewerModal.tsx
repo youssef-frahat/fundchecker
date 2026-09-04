@@ -359,7 +359,7 @@ export function HistoricalFileViewerModal({ fileRecord, onClose }: HistoricalFil
                           {ord.quantity.toLocaleString('en-US')}
                         </td>
                         <td className="p-3 text-right text-slate-600">
-                          {ord.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                          {ord.price.toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
                         </td>
                         <td className="p-3 text-right font-bold text-slate-900">
                           {ord.orderValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}

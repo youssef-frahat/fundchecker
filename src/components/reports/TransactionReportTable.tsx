@@ -344,7 +344,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
                     <td className="p-3 text-center text-slate-600">{row.branchId}</td>
                     <td className="p-3 text-slate-600">{row.valueDate}</td>
                     <td className="p-3 text-right text-slate-700">
-                      {row.icPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                      {row.icPrice.toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
                     </td>
                     <td className="p-3 text-center text-slate-600">{row.fees}</td>
                     <td className="p-3 font-sans text-slate-600 max-w-[160px] truncate text-[11px]">

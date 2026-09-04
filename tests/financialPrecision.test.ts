@@ -12,6 +12,7 @@ import {
   calculateNetTransfer,
   calculateFinalTransfer,
   formatAccountingString,
+  formatPriceString,
 } from '../src/lib/services/financialMath';
 
 describe('Financial Math Engine (Decimal.js Precision)', () => {
@@ -74,5 +75,13 @@ describe('Financial Math Engine (Decimal.js Precision)', () => {
     assert.equal(formatAccountingString(0, 2), '-');
     assert.equal(formatAccountingString(1250000.5, 2), '1,250,000.50');
     assert.equal(formatAccountingString(-349785.94, 2), '(349,785.94)');
+  });
+
+  it('should format execution and NAV unit prices with 5 decimal places (e.g. 2.11111)', () => {
+    assert.equal(formatPriceString(2.11, 5), '2.11000');
+    assert.equal(formatPriceString(2.11111, 5), '2.11111');
+    assert.equal(formatPriceString(2.111116, 5), '2.11112');
+    assert.equal(formatPriceString(0, 5), '0.00000');
+    assert.equal(formatPriceString(null, 5), '—');
   });
 });

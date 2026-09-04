@@ -364,7 +364,7 @@ export async function exportSingleFundTransactionSheet(
         cell.alignment = { horizontal: 'right', vertical: 'middle' };
         if (colNumber === 6 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
         if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0.###';
-        if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+        if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00000';
       } else {
         cell.alignment = { horizontal: 'left', vertical: 'middle' };
       }
@@ -464,7 +464,7 @@ export async function exportTransactionSheetsPerProduct(
           cell.alignment = { horizontal: 'right', vertical: 'middle' };
           if (colNumber === 6 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
           if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0.###';
-          if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+          if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00000';
         } else {
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
         }
@@ -573,7 +573,7 @@ export async function exportAllFundsAsZip(
           cell.alignment = { horizontal: 'right', vertical: 'middle' };
           if (colNumber === 6 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
           if (colNumber === 7 && typeof cell.value === 'number') cell.numFmt = '#,##0.###';
-          if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+          if (colNumber === 10 && typeof cell.value === 'number') cell.numFmt = '#,##0.00000';
         } else {
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
         }

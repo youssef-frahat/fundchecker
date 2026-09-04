@@ -135,7 +135,7 @@ export async function generateFundTransactions(
           } else if (colNumber === 7 && typeof cell.value === 'number') {
             cell.numFmt = '#,##0';
           } else if (colNumber === 10 && typeof cell.value === 'number') {
-            cell.numFmt = '#,##0.00';
+            cell.numFmt = '#,##0.00000';
           }
         } else {
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
