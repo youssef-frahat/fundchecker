@@ -75,8 +75,15 @@ export async function getAuthenticatedServerUser(): Promise<AuthenticatedServerU
 
     if (dbUser) {
       const roleObj = dbUser.roles as { name?: string } | undefined;
-      if (roleObj?.name === 'SUPER_ADMIN') {
-        resolvedRole = 'SUPER_ADMIN';
+      const validRoles: UserRole[] = [
+        'SUPER_ADMIN',
+        'OPERATIONS_USER',
+        'TRADING_OPERATOR',
+        'OPERATIONS_CHECKER',
+        'AUDITOR',
+      ];
+      if (roleObj?.name && validRoles.includes(roleObj.name as UserRole)) {
+        resolvedRole = roleObj.name as UserRole;
       }
       fullName = String(dbUser.full_name || fullName);
     }
