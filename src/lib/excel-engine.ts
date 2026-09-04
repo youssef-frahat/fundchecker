@@ -980,7 +980,7 @@ export async function parseMasterDataExcel(file: File): Promise<Omit<ReferenceDa
           curCols.colActualSymbol = colNumber;
           score += 3;
         } else if (
-          text.includes('settlement') || text.includes('fundtype') || text.includes('تسوية') || text === 'type'
+          text.includes('settlement') || text.includes('fundtype') || text.includes('تسوية') || text === 'type' || text.includes('t0/t1') || text.includes('t0') || text.includes('t1') || text.includes('نوع')
         ) {
           curCols.colFundType = colNumber;
           score += 3;
@@ -990,12 +990,12 @@ export async function parseMasterDataExcel(file: File): Promise<Omit<ReferenceDa
           curCols.colNavUnitPrice = colNumber;
           score += 2;
         } else if (
-          text.includes('frequency') || text.includes('cycle') || text.includes('دورية')
+          text.includes('frequency') || text.includes('cycle') || text.includes('دورية') || text.includes('تكرار')
         ) {
           curCols.colScheduleFrequency = colNumber;
           score += 2;
         } else if (
-          text.includes('schedule') || text.includes('instruction') || text.includes('تعليمات')
+          text.includes('schedule') || text.includes('instruction') || text.includes('تعليمات') || text.includes('ملاحظات') || text.includes('شروط') || text.includes('مواعيد') || text.includes('notes')
         ) {
           curCols.colExecutionInstruction = colNumber;
           score += 2;
@@ -1037,23 +1037,40 @@ export async function parseMasterDataExcel(file: File): Promise<Omit<ReferenceDa
     const rawEmail = bestCols.colEmailContact ? extractCellValue(row.getCell(bestCols.colEmailContact)).trim() : '';
     const rawStatus = bestCols.colStatus ? extractCellValue(row.getCell(bestCols.colStatus)).toUpperCase().trim() : '';
 
-    // Normalize Settlement Type
-    let fundType: SettlementType = 'T0';
-    if (rawType.includes('T1') || rawType === '1' || rawType.includes('EQUITY')) {
-      fundType = 'T1';
+    // Normalize Settlement Type - only set if column exists and value is not empty
+    let fundType: SettlementType | undefined = undefined;
+    if (bestCols.colFundType && rawType) {
+      if (rawType.includes('T1') || rawType === '1' || rawType.includes('EQUITY')) {
+        fundType = 'T1';
+      } else if (rawType.includes('T0') || rawType === '0') {
+        fundType = 'T0';
+      } else if (rawType.includes('T2') || rawType === '2') {
+        fundType = 'T2';
+      } else if (rawType.includes('DVP')) {
+        fundType = 'DVP';
+      }
     }
 
-    // Normalize Schedule Frequency
-    let scheduleFrequency = 'DAILY';
-    if (rawFreq.includes('WEEK') || rawFreq.includes('أسبوعي') || rawFreq.includes('اسبوعي')) {
-      scheduleFrequency = 'WEEKLY';
-    } else if (rawFreq.includes('BI') || rawFreq.includes('نصف')) {
-      scheduleFrequency = 'BIWEEKLY';
-    } else if (rawFreq.includes('MONTH') || rawFreq.includes('شهري')) {
-      scheduleFrequency = 'MONTHLY';
-    } else if (rawFreq.includes('CUSTOM') || rawFreq.includes('مخصص')) {
-      scheduleFrequency = 'CUSTOM';
+    // Normalize Schedule Frequency - only set if column exists and value is not empty
+    let scheduleFrequency: string | undefined = undefined;
+    if (bestCols.colScheduleFrequency && rawFreq) {
+      if (rawFreq.includes('WEEK') || rawFreq.includes('أسبوعي') || rawFreq.includes('اسبوعي')) {
+        scheduleFrequency = 'WEEKLY';
+      } else if (rawFreq.includes('BI') || rawFreq.includes('نصف')) {
+        scheduleFrequency = 'BIWEEKLY';
+      } else if (rawFreq.includes('MONTH') || rawFreq.includes('شهري')) {
+        scheduleFrequency = 'MONTHLY';
+      } else if (rawFreq.includes('CUSTOM') || rawFreq.includes('مخصص')) {
+        scheduleFrequency = 'CUSTOM';
+      } else if (rawFreq.includes('DAY') || rawFreq.includes('يومي')) {
+        scheduleFrequency = 'DAILY';
+      } else {
+        scheduleFrequency = rawFreq;
+      }
     }
+
+    // Execution instruction - only set if column exists and value is not empty
+    const executionInstruction = rawInst ? rawInst : undefined;
 
     // Normalize Status
     let status: 'ACTIVE' | 'ARCHIVED' = 'ACTIVE';
@@ -1068,7 +1085,7 @@ export async function parseMasterDataExcel(file: File): Promise<Omit<ReferenceDa
       fundType,
       navUnitPrice: rawNav || 0,
       scheduleFrequency,
-      executionInstruction: rawInst || (fundType === 'T1' ? 'T+1' : 'T+0'),
+      executionInstruction,
       emailContact: rawEmail || '',
       status,
     });

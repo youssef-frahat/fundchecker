@@ -38,7 +38,7 @@ export interface ReferenceData {
   actualSymbol: string; // Actual Symbol / Ticker (e.g. "AFAC")
   emailContact?: string; // Email for notifications
   navUnitPrice: number; // NAV Unit Price
-  fundType: SettlementType; // T0/T1/T2/DVP — used for rule evaluation
+  fundType?: SettlementType; // T0/T1/T2/DVP — used for rule evaluation
   fundId?: string;
   status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'CLOSED';
   scheduleFrequency?: string;

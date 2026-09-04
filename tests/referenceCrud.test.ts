@@ -124,4 +124,67 @@ describe('Reference Data & Master Data Lifecycle (DATA-02 & CRUD)', () => {
     assert.equal(checkSuperAdmin('AUDITOR').allowed, false);
     assert.equal(checkSuperAdmin('SUPER_ADMIN').allowed, true);
   });
+
+  it('parseMasterDataExcel should NOT blindly default missing columns to T0 or T+0 (non-destructive)', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Prices Only');
+    // Simulating sheet with only Code, Name, Symbol, and NAV Price (NO settlement type or instruction columns)
+    ws.addRow(['Fund Code', 'Fund Name', 'Actual Symbol', 'NAV Price']);
+    ws.addRow(['1020', 'Misr Al Mostakbal', 'MOSTAKBAL', 145.5]);
+
+    const buf = await wb.xlsx.writeBuffer();
+    const mockFile = {
+      arrayBuffer: async () => buf,
+      name: 'Prices_Only.xlsx',
+    } as unknown as File;
+
+    const parsed = await parseMasterDataExcel(mockFile);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].symbolCode, '1020');
+    assert.equal(parsed[0].navUnitPrice, 145.5);
+    // Crucial: Missing columns must remain undefined so they do not overwrite DB records!
+    assert.equal(parsed[0].fundType, undefined, 'Must not invent T0 when column is missing');
+    assert.equal(parsed[0].executionInstruction, undefined, 'Must not invent T+0 when column is missing');
+    assert.equal(parsed[0].scheduleFrequency, undefined, 'Must not invent DAILY when column is missing');
+  });
+
+  it('Canonical Funds Catalog Integrity (68 funds with exact Arabic instructions)', async () => {
+    const { CANONICAL_FUNDS } = await import('../src/lib/constants/canonicalFunds');
+    assert.equal(CANONICAL_FUNDS.length, 68, 'Must have exactly 68 canonical funds');
+
+    const fund1001 = CANONICAL_FUNDS.find((f) => f.symbolCode === '1001');
+    assert.ok(fund1001);
+    assert.equal(fund1001.fundType, 'T0');
+
+    const fund1006 = CANONICAL_FUNDS.find((f) => f.symbolCode === '1006');
+    assert.ok(fund1006);
+    assert.equal(fund1006.fundType, 'T1');
+
+    const fund1020 = CANONICAL_FUNDS.find((f) => f.symbolCode === '1020');
+    assert.ok(fund1020);
+    assert.equal(fund1020.fundType, 'T1');
+    assert.equal(fund1020.scheduleFrequency, 'WEEKLY');
+    assert.equal(
+      fund1020.executionInstruction,
+      'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد'
+    );
+
+    const beltonUsd = CANONICAL_FUNDS.find((f) => f.symbolCode === 'Belton USD');
+    assert.ok(beltonUsd);
+    assert.equal(beltonUsd.fundType, 'T1');
+    assert.equal(beltonUsd.scheduleFrequency, 'BIWEEKLY');
+    assert.equal(
+      beltonUsd.executionInstruction,
+      'شراء T+1&البيع يوم الاثنين فى ثاني اسبوع ورابع اسبوع من كل شهر'
+    );
+
+    const maksabOz = CANONICAL_FUNDS.find((f) => f.symbolCode === 'Maksab OZ');
+    assert.ok(maksabOz);
+    assert.equal(maksabOz.fundType, 'T1');
+    assert.equal(maksabOz.scheduleFrequency, 'MONTHLY');
+    assert.equal(
+      maksabOz.executionInstruction,
+      'الشراء اسبوعي يومي الاثنين & البيع بيتم ارسال اخطار يوم 18 من كل شهر وبيتم التنفيذ فى اول يوم اثنين من كل شهر'
+    );
+  });
 });

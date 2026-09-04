@@ -34,6 +34,7 @@ import {
   updateReferenceDataAction,
   archiveReferenceDataAction,
   bulkImportReferenceDataAction,
+  restoreCanonicalMasterDataAction,
 } from '@/app/actions/referenceActions';
 import { processTradeFileAction } from '@/app/actions/processingActions';
 import { uploadAllocationFileAction } from '@/app/actions/transferActions';
@@ -388,6 +389,23 @@ export default function InvestmentPlatformPage() {
     return { success: true, count: res.count };
   };
 
+  const handleRestoreCanonicalDefaults = async (): Promise<{
+    success: boolean;
+    count?: number;
+    error?: string;
+  }> => {
+    const res = await restoreCanonicalMasterDataAction();
+    if (!res.success) {
+      return { success: false, error: res.error || 'Failed to restore canonical master data.' };
+    }
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.refData) {
+      setReferenceDataList(wsData.refData);
+    }
+    await refreshAuditLogs();
+    return { success: true, count: res.count };
+  };
+
   // User Management Handlers
   const handleAddUser = async (newUser: {
     email: string;
@@ -623,6 +641,7 @@ export default function InvestmentPlatformPage() {
               onUpdateReferenceData={handleUpdateReferenceData}
               onArchiveReferenceData={handleArchiveReferenceData}
               onBulkImportReferenceData={handleBulkImportReferenceData}
+              onRestoreCanonicalDefaults={handleRestoreCanonicalDefaults}
             />
           </div>
         )}

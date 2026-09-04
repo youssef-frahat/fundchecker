@@ -11,6 +11,7 @@ import {
   archiveReferenceDataInDb,
   deleteReferenceDataInDb,
   upsertReferenceDataBatchInDb,
+  restoreCanonicalMasterDataInDb,
 } from '@/lib/repositories/referenceRepository';
 import { insertAuditLog } from '@/lib/repositories/auditRepository';
 import { ReferenceData } from '@/lib/types';
@@ -242,3 +243,50 @@ export async function bulkImportReferenceDataAction(
     };
   }
 }
+
+/**
+ * Restores canonical master data (68 funds) and exact operational instructions.
+ * Restricted to Super Admin only, with full audit logging.
+ */
+export async function restoreCanonicalMasterDataAction(): Promise<{
+  success: boolean;
+  count: number;
+  error?: string;
+}> {
+  try {
+    const caller = await getAuthenticatedServerUser();
+    if (!caller) {
+      return { success: false, count: 0, error: '401 Unauthorized: Authentication required.' };
+    }
+    if (caller.role !== 'SUPER_ADMIN') {
+      return { success: false, count: 0, error: '403 Forbidden: Super Admin privileges required.' };
+    }
+
+    const { restoredCount } = await restoreCanonicalMasterDataInDb(caller.id);
+    const ip = await getClientIp();
+
+    await insertAuditLog({
+      id: crypto.randomUUID(),
+      userId: caller.id,
+      userName: caller.fullName,
+      action: 'RESTORE_CANONICAL_MASTER_DATA',
+      entityName: 'REFERENCE_DATA',
+      entityId: 'CANONICAL_FUNDS_RESTORE',
+      ipAddress: ip,
+      timestampUtc: new Date().toISOString(),
+      newValues: {
+        totalRestored: restoredCount,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    return { success: true, count: restoredCount };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      count: 0,
+      error: err instanceof Error ? err.message : 'Failed to restore canonical master data.',
+    };
+  }
+}
+

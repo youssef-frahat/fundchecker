@@ -16,6 +16,7 @@ import {
   Download,
   Loader2,
   X,
+  RotateCcw,
 } from 'lucide-react';
 import { ReferenceData, SettlementType } from '@/lib/types';
 import { parseMasterDataExcel, generateMasterDataTemplateExcel } from '@/lib/excel-engine';
@@ -35,6 +36,7 @@ interface ReferenceDataAdminProps {
   onBulkImportReferenceData?: (
     items: Omit<ReferenceData, 'id'>[]
   ) => Promise<{ success: boolean; count?: number; error?: string }>;
+  onRestoreCanonicalDefaults?: () => Promise<{ success: boolean; count?: number; error?: string }>;
 }
 
 export function ReferenceDataAdmin({
@@ -43,6 +45,7 @@ export function ReferenceDataAdmin({
   onUpdateReferenceData,
   onArchiveReferenceData,
   onBulkImportReferenceData,
+  onRestoreCanonicalDefaults,
 }: ReferenceDataAdminProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'ARCHIVED'>('ACTIVE');
@@ -50,6 +53,8 @@ export function ReferenceDataAdmin({
 
   // Loading & Feedback States
   const [isImporting, setIsImporting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -244,6 +249,30 @@ export function ReferenceDataAdmin({
     }
   };
 
+  const handleRestoreCanonical = async () => {
+    if (!onRestoreCanonicalDefaults) return;
+    setIsRestoring(true);
+    setNotification(null);
+    try {
+      const res = await onRestoreCanonicalDefaults();
+      if (!res.success) {
+        throw new Error(res.error || 'Failed to restore canonical master data.');
+      }
+      setShowRestoreModal(false);
+      setNotification({
+        type: 'success',
+        message: `تم استرجاع التكوين القياسي بنجاح! تم تحديث جميع الـ ${res.count || 68} صندوقاً وإعادة تثبيت تعليمات التنفيذ وأنواع التسوية المعتمدة.`,
+      });
+    } catch (err: unknown) {
+      setNotification({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'فشل في استعادة التكوين الأصلي للصناديق.',
+      });
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
       {/* Hidden Excel File Input */}
@@ -300,6 +329,19 @@ export function ReferenceDataAdmin({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Restore Canonical Defaults Button */}
+          {onRestoreCanonicalDefaults && (
+            <button
+              onClick={() => setShowRestoreModal(true)}
+              disabled={isRestoring || isImporting}
+              title="استعادة الإعدادات الأصلية والتعليمات المعتمدة لجميع الـ 68 صندوقاً"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl shadow-2xs transition cursor-pointer disabled:opacity-50"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 text-amber-700 ${isRestoring ? 'animate-spin' : ''}`} />
+              استعادة التعليمات القياسية (68 صندوق)
+            </button>
+          )}
+
           {/* Download Template / Export Button */}
           <button
             onClick={handleDownloadTemplate}
@@ -840,6 +882,59 @@ export function ReferenceDataAdmin({
               >
                 {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {isSaving ? 'Saving Changes...' : 'Save Fund Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Canonical Master Data Confirmation Modal */}
+      {showRestoreModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex items-center gap-3 text-amber-600">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+                <RotateCcw className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h4 className="font-bold text-base text-slate-900">
+                  استعادة التكوين القياسي للصناديق (68 صندوق)
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Restore Canonical Operations &amp; Settlement Rules
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900 space-y-2 leading-relaxed">
+              <p className="font-bold">
+                ⚠️ هل ترغب في إعادة ضبط جميع الصناديق إلى إعداداتها التشغيلية القياسية؟
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-slate-700">
+                <li>استرجاع نوع التسوية المعتمد لكل صندوق (T0 مقابل T1).</li>
+                <li>إعادة تثبيت دوريات ومواعيد التنفيذ والإخطار الرسمية باللغة العربية.</li>
+                <li>الحفاظ التام على أي أسعار وثائق (NAV Prices) مسجلة حالياً أكبر من صفر.</li>
+                <li>توثيق العملية تلقائياً في سجل الرقابة والتدقيق (Immutable Audit Log).</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowRestoreModal(false)}
+                disabled={isRestoring}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 transition"
+              >
+                إلغاء (Cancel)
+              </button>
+              <button
+                type="button"
+                onClick={handleRestoreCanonical}
+                disabled={isRestoring}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/20 flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer"
+              >
+                {isRestoring && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isRestoring ? 'جاري الاستعادة وتحديث الداتابيز...' : 'تأكيد الاستعادة القياسية'}
               </button>
             </div>
           </div>

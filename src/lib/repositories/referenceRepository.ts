@@ -3,6 +3,7 @@
 
 import { getDbClient } from '../db-client';
 import { Fund, FundRule, ReferenceData } from '../types';
+import { CANONICAL_FUNDS } from '../constants/canonicalFunds';
 
 export async function fetchAllReferenceData(): Promise<ReferenceData[]> {
   const supabase = await getDbClient();
@@ -301,7 +302,9 @@ export async function deleteReferenceDataInDb(id: string): Promise<boolean> {
 }
 
 /**
- * Bulk upserts reference data items (ON CONFLICT symbol_code DO UPDATE).
+ * Bulk upserts reference data items (ON CONFLICT symbol_code DO UPDATE) safely.
+ * Non-destructive: preserves existing fund_type, prices, emails, and fund schedules
+ * if the uploaded file does not specify them.
  */
 export async function upsertReferenceDataBatchInDb(
   items: Omit<ReferenceData, 'id'>[],
@@ -319,17 +322,65 @@ export async function upsertReferenceDataBatchInDb(
     }
   }
   const uniqueItems = Array.from(map.values());
+  const symbolCodes = uniqueItems.map((u) => u.symbolCode.trim());
 
-  const records = uniqueItems.map((item) => ({
-    symbol_code: item.symbolCode.trim(),
-    symbol_name: item.symbolName.trim(),
-    actual_symbol: item.actualSymbol.trim(),
-    email_contact: item.emailContact?.trim() || null,
-    nav_unit_price: item.navUnitPrice || 0,
-    fund_type: item.fundType || 'T0',
-    status: item.status || 'ACTIVE',
-    created_by: userId || null,
-  }));
+  // Fetch existing reference records to avoid destroying existing attributes
+  const { data: existingRefs } = await supabase
+    .from('reference_data')
+    .select('symbol_code, fund_type, nav_unit_price, email_contact, status')
+    .in('symbol_code', symbolCodes);
+
+  const existingMap = new Map<
+    string,
+    {
+      symbol_code: string;
+      fund_type: string;
+      nav_unit_price: number;
+      email_contact: string | null;
+      status: string;
+    }
+  >();
+
+  if (existingRefs) {
+    for (const r of existingRefs) {
+      if (r.symbol_code) {
+        existingMap.set(String(r.symbol_code).trim().toLowerCase(), r as any);
+      }
+    }
+  }
+
+  const records = uniqueItems.map((item) => {
+    const code = item.symbolCode.trim();
+    const existing = existingMap.get(code.toLowerCase());
+
+    // Preserve existing fund_type if item does not have an explicit fundType specified
+    const fundType = item.fundType || existing?.fund_type || 'T0';
+
+    // Preserve existing nav_unit_price if incoming price is 0 or absent, but DB has > 0
+    const navUnitPrice =
+      item.navUnitPrice && item.navUnitPrice > 0
+        ? item.navUnitPrice
+        : existing?.nav_unit_price || 0;
+
+    // Preserve existing email if incoming is empty
+    const emailContact =
+      item.emailContact && item.emailContact.trim() !== ''
+        ? item.emailContact.trim()
+        : existing?.email_contact || null;
+
+    const status = item.status || existing?.status || 'ACTIVE';
+
+    return {
+      symbol_code: code,
+      symbol_name: item.symbolName.trim(),
+      actual_symbol: item.actualSymbol.trim(),
+      email_contact: emailContact,
+      nav_unit_price: navUnitPrice,
+      fund_type: fundType,
+      status: status,
+      created_by: userId || null,
+    };
+  });
 
   const { error } = await supabase
     .from('reference_data')
@@ -339,26 +390,35 @@ export async function upsertReferenceDataBatchInDb(
     throw new Error(`[DB ERROR] upsertReferenceDataBatchInDb: ${error.message}`);
   }
 
-  // Update schedules
+  // Update fund_schedules ONLY if frequency, instruction or fundType are provided
   for (const item of uniqueItems) {
-    if (item.scheduleFrequency || item.executionInstruction) {
-      const code = item.symbolCode.trim();
+    const code = item.symbolCode.trim();
+    const hasInstruction = Boolean(item.executionInstruction && item.executionInstruction.trim() !== '');
+    const hasFrequency = Boolean(item.scheduleFrequency && item.scheduleFrequency.trim() !== '');
+    const hasFundType = Boolean(item.fundType && item.fundType.trim() !== '');
+
+    if (hasInstruction || hasFrequency || hasFundType) {
       const { data: existing } = await supabase
         .from('fund_schedules')
-        .select('id')
+        .select('id, fund_type, frequency, raw_instruction')
         .eq('fund_code', code)
         .limit(1);
 
       if (existing && existing.length > 0) {
-        await supabase
-          .from('fund_schedules')
-          .update({
-            fund_type: item.fundType || 'T0',
-            frequency: item.scheduleFrequency || 'DAILY',
-            raw_instruction: item.executionInstruction || '',
-            status: item.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
-          })
-          .eq('id', existing[0].id);
+        const existingRow = existing[0];
+        const updatePayload: Record<string, any> = {};
+
+        if (hasFundType) updatePayload.fund_type = item.fundType;
+        if (hasFrequency) updatePayload.frequency = item.scheduleFrequency;
+        if (hasInstruction) updatePayload.raw_instruction = item.executionInstruction;
+        if (item.status) updatePayload.status = item.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
+
+        if (Object.keys(updatePayload).length > 0) {
+          await supabase
+            .from('fund_schedules')
+            .update(updatePayload)
+            .eq('id', existingRow.id);
+        }
       } else {
         await supabase.from('fund_schedules').insert({
           fund_code: code,
@@ -372,5 +432,88 @@ export async function upsertReferenceDataBatchInDb(
   }
 
   return { processed: uniqueItems.length, count: uniqueItems.length };
+}
+
+/**
+ * Restores canonical master data for all 68 funds from the operations specification.
+ * Restores exact Arabic execution instructions, frequencies, settlement types (T0 vs T1),
+ * while safely preserving any existing live NAV prices > 0.
+ */
+export async function restoreCanonicalMasterDataInDb(
+  userId?: string
+): Promise<{ restoredCount: number }> {
+  const supabase = await getDbClient();
+
+  // 1. Fetch existing NAV prices from DB so we don't wipe them to 0
+  const { data: existingRefData } = await supabase
+    .from('reference_data')
+    .select('symbol_code, nav_unit_price');
+
+  const priceMap = new Map<string, number>();
+  if (existingRefData) {
+    for (const r of existingRefData) {
+      if (r.symbol_code && Number(r.nav_unit_price) > 0) {
+        priceMap.set(String(r.symbol_code).trim().toLowerCase(), Number(r.nav_unit_price));
+      }
+    }
+  }
+
+  // 2. Prepare canonical reference_data records
+  const refRecords = CANONICAL_FUNDS.map((f) => ({
+    symbol_code: f.symbolCode.trim(),
+    symbol_name: f.symbolName.trim(),
+    actual_symbol: f.actualSymbol.trim(),
+    email_contact: f.emailContact?.trim() || null,
+    nav_unit_price: priceMap.get(f.symbolCode.trim().toLowerCase()) ?? f.navUnitPrice ?? 0,
+    fund_type: f.fundType,
+    status: f.status,
+    created_by: userId || null,
+  }));
+
+  const { error: refErr } = await supabase
+    .from('reference_data')
+    .upsert(refRecords, { onConflict: 'symbol_code' });
+
+  if (refErr) {
+    throw new Error(`[DB ERROR] restoreCanonicalMasterDataInDb (reference_data): ${refErr.message}`);
+  }
+
+  // 3. Re-insert / Upsert canonical fund_schedules
+  const { data: existingScheds } = await supabase
+    .from('fund_schedules')
+    .select('id, fund_code');
+
+  const schedIdMap = new Map<string, string>();
+  if (existingScheds) {
+    for (const s of existingScheds) {
+      if (s.fund_code) {
+        schedIdMap.set(String(s.fund_code).trim().toLowerCase(), String(s.id));
+      }
+    }
+  }
+
+  for (const f of CANONICAL_FUNDS) {
+    const existingId = schedIdMap.get(f.symbolCode.trim().toLowerCase());
+    const payload = {
+      fund_code: f.symbolCode.trim(),
+      fund_type: f.fundType,
+      frequency: f.scheduleFrequency,
+      raw_instruction: f.executionInstruction,
+      status: f.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+    };
+
+    if (existingId) {
+      await supabase
+        .from('fund_schedules')
+        .update(payload)
+        .eq('id', existingId);
+    } else {
+      await supabase
+        .from('fund_schedules')
+        .insert(payload);
+    }
+  }
+
+  return { restoredCount: CANONICAL_FUNDS.length };
 }
 
