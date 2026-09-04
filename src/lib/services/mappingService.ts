@@ -58,7 +58,7 @@ export function mapTransactionsToReferenceData(
     } else {
       unmappedCount++;
       const exception: ExceptionRecord = {
-        id: `ex-map-${i + 1}-${Date.now()}`,
+        id: crypto.randomUUID(),
         fileId: row.fileId,
         fileName,
         exceptionType: 'UNKNOWN_SYMBOL',

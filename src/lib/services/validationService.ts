@@ -31,7 +31,7 @@ export async function validateTradeFile(
   const existingFile = await checkDuplicateFileHash(fileHashSha256, currentFileId);
   if (existingFile && !allowOverwrite) {
     exceptions.push({
-      id: `ex-dup-file-${Date.now()}`,
+      id: crypto.randomUUID(),
       fileId: existingFile.id,
       fileName,
       exceptionType: 'DUPLICATE_UPLOAD',
@@ -62,7 +62,7 @@ export async function validateTradeFile(
     if (!r.requestId || r.requestId.trim() === '' || r.requestId.trim() === '-1') {
       const msg = `Row #${rowNum}: Invalid mandatory Request ID ("${r.requestId || 'EMPTY'}").`;
       exceptions.push({
-        id: `ex-val-${rowNum}-${Date.now()}`,
+        id: crypto.randomUUID(),
         fileId: r.fileId,
         fileName,
         exceptionType: 'SCHEMATIC_ERR',
@@ -79,7 +79,7 @@ export async function validateTradeFile(
     if (seenRequestIds.has(r.requestId)) {
       const msg = `Row #${rowNum}: Duplicate Request ID "${r.requestId}" detected within file.`;
       exceptions.push({
-        id: `ex-val-dup-${rowNum}-${Date.now()}`,
+        id: crypto.randomUUID(),
         fileId: r.fileId,
         fileName,
         exceptionType: 'DUPLICATE_TRADE',
@@ -97,7 +97,7 @@ export async function validateTradeFile(
     if (r.orderValue < 0 || r.price < 0 || r.quantity < 0) {
       const msg = `Row #${rowNum} (Req ID: ${r.requestId}): Invalid negative quantity, price, or order value.`;
       exceptions.push({
-        id: `ex-val-neg-${rowNum}-${Date.now()}`,
+        id: crypto.randomUUID(),
         fileId: r.fileId,
         fileName,
         exceptionType: 'SCHEMATIC_ERR',

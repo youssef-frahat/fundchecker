@@ -1,17 +1,35 @@
 'use client';
 
-import React from 'react';
-import { AlertTriangle, CheckCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertTriangle, CheckCheck, Trash2 } from 'lucide-react';
 import { ExceptionRecord } from '@/lib/types';
 
 interface ExceptionCenterProps {
   exceptions: ExceptionRecord[];
   onResolveException: (id: string) => void;
   onResolveAllExceptions?: () => void;
+  onCleanResolvedExceptions?: () => Promise<void> | void;
 }
 
-export function ExceptionCenter({ exceptions, onResolveException, onResolveAllExceptions }: ExceptionCenterProps) {
+export function ExceptionCenter({
+  exceptions,
+  onResolveException,
+  onResolveAllExceptions,
+  onCleanResolvedExceptions,
+}: ExceptionCenterProps) {
   const openCount = exceptions.filter((e) => e.status === 'OPEN').length;
+  const resolvedCount = exceptions.filter((e) => e.status === 'RESOLVED').length;
+  const [isCleaning, setIsCleaning] = useState<boolean>(false);
+
+  const handleClean = async () => {
+    if (!onCleanResolvedExceptions) return;
+    try {
+      setIsCleaning(true);
+      await onCleanResolvedExceptions();
+    } finally {
+      setIsCleaning(false);
+    }
+  };
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
@@ -29,7 +47,7 @@ export function ExceptionCenter({ exceptions, onResolveException, onResolveAllEx
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="text-xs font-mono text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
             <span>Open Exceptions: </span>
             <span className="text-rose-700 font-bold">
@@ -44,6 +62,18 @@ export function ExceptionCenter({ exceptions, onResolveException, onResolveAllEx
             >
               <CheckCheck className="w-4 h-4" />
               Resolve All ({openCount})
+            </button>
+          )}
+
+          {resolvedCount > 0 && onCleanResolvedExceptions && (
+            <button
+              onClick={handleClean}
+              disabled={isCleaning}
+              className="flex items-center gap-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-300 hover:border-rose-300 font-bold px-3.5 py-1.5 rounded-xl text-xs transition shadow-2xs disabled:opacity-50"
+              title="Delete all resolved exceptions from database and clear queue"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+              {isCleaning ? 'Cleaning...' : `Clean Resolved (${resolvedCount})`}
             </button>
           )}
         </div>

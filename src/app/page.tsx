@@ -56,6 +56,7 @@ import {
   fetchAuditLogsAction,
   resolveExceptionAction,
   resolveAllExceptionsAction,
+  cleanResolvedExceptionsAction,
 } from '@/app/actions/workspaceActions';
 import {
   createUserAction,
@@ -638,6 +639,25 @@ export default function InvestmentPlatformPage() {
     }
   };
 
+  const handleCleanResolvedExceptions = async () => {
+    try {
+      // Optimistically clear resolved exceptions from UI
+      setExceptions((prev) => prev.filter((e) => e.status !== 'RESOLVED'));
+      const res = await cleanResolvedExceptionsAction();
+      if (!res.success) {
+        setProcessingError(formatUserFriendlyError(res.error || 'Failed to clear resolved exceptions.'));
+      }
+      const wsData = await fetchWorkspaceDataAction();
+      if (wsData.success && wsData.exceptions) {
+        setExceptions(wsData.exceptions);
+      }
+      const freshLogs = await fetchAuditLogsAction();
+      setAuditLogs(freshLogs);
+    } catch (err) {
+      setProcessingError(formatUserFriendlyError(err));
+    }
+  };
+
   const handleAddReferenceData = async (item: Omit<ReferenceData, 'id'>) => {
     const createdItem = await insertReferenceDataToDb(item);
     setReferenceDataList((prev) => [createdItem, ...prev]);
@@ -872,6 +892,7 @@ export default function InvestmentPlatformPage() {
             exceptions={exceptions}
             onResolveException={handleResolveException}
             onResolveAllExceptions={handleResolveAllExceptions}
+            onCleanResolvedExceptions={handleCleanResolvedExceptions}
           />
         )}
 

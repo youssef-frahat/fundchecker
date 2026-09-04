@@ -375,3 +375,44 @@ export async function resolveAllExceptionsAction(): Promise<{ success: boolean; 
     return { success: false, error: err instanceof Error ? err.message : 'Failed to resolve all exceptions.' };
   }
 }
+
+export async function cleanResolvedExceptionsAction(): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    const caller = await getAuthenticatedServerUser();
+    if (!caller) {
+      return { success: false, count: 0, error: '401 Unauthorized: Authentication required.' };
+    }
+    const { cleanResolvedExceptionsInDb } = await import('@/lib/repositories/exceptionRepository');
+    const result = await cleanResolvedExceptionsInDb();
+
+    if (result.success && result.count > 0) {
+      const { headers } = await import('next/headers');
+      const headersList = await headers();
+      const ipAddress =
+        headersList.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        headersList.get('x-real-ip') ||
+        '127.0.0.1';
+
+      const { insertAuditLog } = await import('@/lib/repositories/auditRepository');
+      await insertAuditLog({
+        id: crypto.randomUUID(),
+        userId: caller.id,
+        userName: caller.fullName,
+        action: 'CLEAN_RESOLVED_EXCEPTIONS',
+        entityName: 'EXCEPTION_QUEUE',
+        entityId: 'RESOLVED_BATCH',
+        ipAddress,
+        timestampUtc: new Date().toISOString(),
+        newValues: { purgedCount: result.count },
+      });
+    }
+
+    return { success: result.success, count: result.count };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      count: 0,
+      error: err instanceof Error ? err.message : 'Failed to clean resolved exceptions.',
+    };
+  }
+}

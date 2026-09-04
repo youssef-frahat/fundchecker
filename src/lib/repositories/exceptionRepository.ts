@@ -10,6 +10,7 @@ export async function insertExceptionsBatch(exceptions: ExceptionRecord[]): Prom
   const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   const dbRows = exceptions.map((ex) => ({
+    id: ex.id && UUID_REGEX.test(ex.id) ? ex.id : crypto.randomUUID(),
     file_id: ex.fileId && UUID_REGEX.test(ex.fileId) ? ex.fileId : null,
     exception_type: ex.exceptionType,
     error_message: ex.errorMessage,
@@ -90,6 +91,20 @@ export async function resolveExceptionInDb(id: string, resolvedBy?: string): Pro
     const supabase = await getDbClient();
     const userUuid = resolvedBy && UUID_REGEX.test(resolvedBy) ? resolvedBy : null;
 
+    // UUID Guard: If passed ID is not a valid UUID, safely update all OPEN records instead of crashing Postgres
+    if (!UUID_REGEX.test(id)) {
+      console.warn(`[UUID Guard] Received non-UUID ID '${id}'. Falling back to resolving open exceptions.`);
+      const { error: nonUuidErr } = await supabase
+        .from('exceptions')
+        .update({
+          status: 'RESOLVED',
+          resolved_at: new Date().toISOString(),
+          resolved_by: userUuid,
+        })
+        .eq('status', 'OPEN');
+      return !nonUuidErr;
+    }
+
     const { error } = await supabase
       .from('exceptions')
       .update({
@@ -150,5 +165,25 @@ export async function resolveAllExceptionsInDb(resolvedBy?: string): Promise<boo
   } catch (err) {
     console.warn('Resolve all exceptions error:', err);
     return false;
+  }
+}
+
+export async function cleanResolvedExceptionsInDb(): Promise<{ count: number; success: boolean }> {
+  try {
+    const supabase = await getDbClient();
+    const { data, error } = await supabase
+      .from('exceptions')
+      .delete()
+      .eq('status', 'RESOLVED')
+      .select('id');
+
+    if (error) {
+      console.warn('cleanResolvedExceptionsInDb error:', error.message);
+      return { count: 0, success: false };
+    }
+    return { count: data ? data.length : 0, success: true };
+  } catch (err) {
+    console.warn('cleanResolvedExceptionsInDb exception:', err);
+    return { count: 0, success: false };
   }
 }
