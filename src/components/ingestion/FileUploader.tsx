@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { computeFileHash, parseTradingExcel } from '@/lib/excel-engine';
 import { RawTransactionRow, UploadedFileRecord } from '@/lib/types';
+import { formatUserFriendlyError } from '@/lib/error-formatter';
 import ExcelJS from 'exceljs';
 
 interface FileUploaderProps {
@@ -89,7 +90,7 @@ export function FileUploader({
       onFileUpload(fileRecord, parsedRows, fileCategory);
       setDuplicateModal(null);
     } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : 'Error extracting trade rows.');
+      setErrorMessage(formatUserFriendlyError(err));
     } finally {
       setIsProcessing(false);
     }

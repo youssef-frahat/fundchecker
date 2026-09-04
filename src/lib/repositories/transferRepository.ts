@@ -103,56 +103,15 @@ export async function createTransferBatchWithLines(
 }
 
 
-export async function fetchLatestTransferBatch(): Promise<TransferSheetBatch | null> {
-  try {
-    const supabase = await getDbClient();
-    const { data: batch, error: batchErr } = await supabase
-      .from('transfer_sheet_batches')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (batchErr || !batch) return null;
-
-    // Fetch lines for this batch
-    const { data: lines } = await supabase
-      .from('transfer_sheet_lines')
-      .select('*')
-      .eq('batch_id', batch.id)
-      .order('symbol_code', { ascending: true });
-
-    // Fetch adjustments for this batch
-    const { data: adjustments } = await supabase
-      .from('transfer_line_adjustments')
-      .select('*')
-      .eq('batch_id', batch.id)
-      .order('timestamp_utc', { ascending: false });
-
-    const adjustmentsMap = new Map<string, TransferLineAdjustment[]>();
-    if (adjustments) {
-      for (const adj of adjustments) {
-        const lineId = String(adj.line_id);
-        if (!adjustmentsMap.has(lineId)) adjustmentsMap.set(lineId, []);
-        adjustmentsMap.get(lineId)!.push({
-          id: String(adj.id),
-          batchId: String(adj.batch_id),
-          lineId,
-          symbolCode: String(adj.symbol_code),
-          systemNetSnapshot: Number(adj.system_net_snapshot) || 0,
-          oldAdjustmentAmount: Number(adj.old_adjustment_amount) || 0,
-          newAdjustmentAmount: Number(adj.new_adjustment_amount) || 0,
-          delta: Number(adj.delta) || 0,
-          resultingFinalTransfer: Number(adj.resulting_final_transfer) || 0,
-          adjustmentCategory: (adj.adjustment_category || 'MANUAL_ADJUSTMENT') as AdjustmentCategory,
-          reason: String(adj.reason),
-          userId: String(adj.user_id),
-          userName: String(adj.user_name),
-          clientIp: String(adj.client_ip),
-          timestampUtc: String(adj.timestamp_utc),
-        });
-      }
-    }
+export interface TransferBatchSummary {
+  id: string;
+  batchNumber: string;
+  status: string;
+  totalNetAmount: number;
+  totalBuyAmount: number;
+  totalSellAmount: number;
+  createdAt: string;
+}
 
 interface DbTransferLine {
   id: unknown;
@@ -168,53 +127,164 @@ interface DbTransferLine {
   is_manually_adjusted?: unknown;
 }
 
-    const mappedLines: TransferSheetLine[] = (lines || []).map((item) => {
-      const l = item as unknown as DbTransferLine;
-      const sysBuy = Number(l.system_buy_amount) || 0;
-      const sysSell = Number(l.system_sell_amount) || 0;
-      const sysNet = sysSell - sysBuy;
-      const adjAmount = Number(l.adjustment_amount) || 0;
-      const finalTransfer = sysNet + adjAmount;
+function buildTransferBatchObject(
+  batch: Record<string, unknown>,
+  lines: unknown[] | null,
+  adjustments: unknown[] | null
+): TransferSheetBatch {
+  const adjustmentsMap = new Map<string, TransferLineAdjustment[]>();
+  if (adjustments) {
+    for (const item of adjustments) {
+      const adj = item as Record<string, unknown>;
+      const lineId = String(adj.line_id);
+      if (!adjustmentsMap.has(lineId)) adjustmentsMap.set(lineId, []);
+      adjustmentsMap.get(lineId)!.push({
+        id: String(adj.id),
+        batchId: String(adj.batch_id),
+        lineId,
+        symbolCode: String(adj.symbol_code),
+        systemNetSnapshot: Number(adj.system_net_snapshot) || 0,
+        oldAdjustmentAmount: Number(adj.old_adjustment_amount) || 0,
+        newAdjustmentAmount: Number(adj.new_adjustment_amount) || 0,
+        delta: Number(adj.delta) || 0,
+        resultingFinalTransfer: Number(adj.resulting_final_transfer) || 0,
+        adjustmentCategory: (adj.adjustment_category || 'MANUAL_ADJUSTMENT') as AdjustmentCategory,
+        reason: String(adj.reason),
+        userId: String(adj.user_id),
+        userName: String(adj.user_name),
+        clientIp: String(adj.client_ip),
+        timestampUtc: String(adj.timestamp_utc),
+      });
+    }
+  }
 
-      return {
-        id: String(l.id),
-        batchId: String(l.batch_id),
-        symbolCode: String(l.symbol_code),
-        symbolName: String(l.symbol_name),
-        actualSymbol: l.actual_symbol ? String(l.actual_symbol) : undefined,
-        systemBuyAmount: sysBuy,
-        systemSellAmount: sysSell,
-        systemNetAmount: sysNet,
-        adjustmentAmount: adjAmount,
-        adjustmentCategory: l.adjustment_category as AdjustmentCategory | undefined,
-        adjustmentReason: l.adjustment_reason ? String(l.adjustment_reason) : undefined,
-        finalTransferAmount: finalTransfer,
-        isManuallyAdjusted: Boolean(l.is_manually_adjusted) || adjAmount !== 0,
-        adjustments: adjustmentsMap.get(String(l.id)) || [],
-      };
-    });
+  const mappedLines: TransferSheetLine[] = (lines || []).map((item) => {
+    const l = item as unknown as DbTransferLine;
+    const sysBuy = Number(l.system_buy_amount) || 0;
+    const sysSell = Number(l.system_sell_amount) || 0;
+    const sysNet = sysSell - sysBuy;
+    const adjAmount = Number(l.adjustment_amount) || 0;
+    const finalTransfer = sysNet + adjAmount;
 
     return {
-      id: String(batch.id),
-      batchNumber: String(batch.batch_number),
-      allocationFileId: String(batch.allocation_file_id),
-      businessDate: String(batch.business_date),
-      status: batch.status as TransferSheetBatch['status'],
-      totalBuyAmount: Number(batch.total_buy_amount) || 0,
-      totalSellAmount: Number(batch.total_sell_amount) || 0,
-      totalNetAmount: Number(batch.total_net_amount) || 0,
-      makerId: String(batch.maker_id),
-      checkerId: batch.checker_id ? String(batch.checker_id) : undefined,
-      rejectionReason: batch.rejection_reason ? String(batch.rejection_reason) : undefined,
-      approvedAt: batch.approved_at ? String(batch.approved_at) : undefined,
-      lockedAt: batch.locked_at ? String(batch.locked_at) : undefined,
-      createdAt: String(batch.created_at),
-      updatedAt: String(batch.updated_at),
-      lines: mappedLines,
+      id: String(l.id),
+      batchId: String(l.batch_id),
+      symbolCode: String(l.symbol_code),
+      symbolName: String(l.symbol_name),
+      actualSymbol: l.actual_symbol ? String(l.actual_symbol) : undefined,
+      systemBuyAmount: sysBuy,
+      systemSellAmount: sysSell,
+      systemNetAmount: sysNet,
+      adjustmentAmount: adjAmount,
+      adjustmentCategory: l.adjustment_category as AdjustmentCategory | undefined,
+      adjustmentReason: l.adjustment_reason ? String(l.adjustment_reason) : undefined,
+      finalTransferAmount: finalTransfer,
+      isManuallyAdjusted: Boolean(l.is_manually_adjusted) || adjAmount !== 0,
+      adjustments: adjustmentsMap.get(String(l.id)) || [],
     };
+  });
+
+  return {
+    id: String(batch.id),
+    batchNumber: String(batch.batch_number),
+    allocationFileId: String(batch.allocation_file_id),
+    businessDate: String(batch.business_date),
+    status: batch.status as TransferSheetBatch['status'],
+    totalBuyAmount: Number(batch.total_buy_amount) || 0,
+    totalSellAmount: Number(batch.total_sell_amount) || 0,
+    totalNetAmount: Number(batch.total_net_amount) || 0,
+    makerId: String(batch.maker_id),
+    checkerId: batch.checker_id ? String(batch.checker_id) : undefined,
+    rejectionReason: batch.rejection_reason ? String(batch.rejection_reason) : undefined,
+    approvedAt: batch.approved_at ? String(batch.approved_at) : undefined,
+    lockedAt: batch.locked_at ? String(batch.locked_at) : undefined,
+    createdAt: String(batch.created_at),
+    updatedAt: String(batch.updated_at),
+    lines: mappedLines,
+  };
+}
+
+export async function fetchLatestTransferBatch(): Promise<TransferSheetBatch | null> {
+  try {
+    const supabase = await getDbClient();
+    const { data: batch, error: batchErr } = await supabase
+      .from('transfer_sheet_batches')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (batchErr || !batch) return null;
+
+    const { data: lines } = await supabase
+      .from('transfer_sheet_lines')
+      .select('*')
+      .eq('batch_id', batch.id)
+      .order('symbol_code', { ascending: true });
+
+    const { data: adjustments } = await supabase
+      .from('transfer_line_adjustments')
+      .select('*')
+      .eq('batch_id', batch.id)
+      .order('timestamp_utc', { ascending: false });
+
+    return buildTransferBatchObject(batch as Record<string, unknown>, lines, adjustments);
   } catch (err) {
     console.warn('Repository query fetchLatestTransferBatch notice:', err);
     return null;
+  }
+}
+
+export async function fetchTransferBatchById(batchId: string): Promise<TransferSheetBatch | null> {
+  try {
+    const supabase = await getDbClient();
+    const { data: batch, error: batchErr } = await supabase
+      .from('transfer_sheet_batches')
+      .select('*')
+      .eq('id', batchId)
+      .maybeSingle();
+
+    if (batchErr || !batch) return null;
+
+    const { data: lines } = await supabase
+      .from('transfer_sheet_lines')
+      .select('*')
+      .eq('batch_id', batch.id)
+      .order('symbol_code', { ascending: true });
+
+    const { data: adjustments } = await supabase
+      .from('transfer_line_adjustments')
+      .select('*')
+      .eq('batch_id', batch.id)
+      .order('timestamp_utc', { ascending: false });
+
+    return buildTransferBatchObject(batch as Record<string, unknown>, lines, adjustments);
+  } catch (err) {
+    console.warn('Repository query fetchTransferBatchById notice:', err);
+    return null;
+  }
+}
+
+export async function fetchAllTransferBatches(): Promise<TransferBatchSummary[]> {
+  try {
+    const supabase = await getDbClient();
+    const { data, error } = await supabase
+      .from('transfer_sheet_batches')
+      .select('id, batch_number, status, total_net_amount, total_buy_amount, total_sell_amount, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error || !data) return [];
+    return data.map((b) => ({
+      id: String(b.id),
+      batchNumber: String(b.batch_number),
+      status: String(b.status),
+      totalNetAmount: Number(b.total_net_amount) || 0,
+      totalBuyAmount: Number(b.total_buy_amount) || 0,
+      totalSellAmount: Number(b.total_sell_amount) || 0,
+      createdAt: String(b.created_at),
+    }));
+  } catch {
+    return [];
   }
 }
 

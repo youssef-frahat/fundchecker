@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { AdjustmentCategory, NettingRow, TransferSheetBatch, TransferSheetLine, UserRole } from '@/lib/types';
 import { exportTransferSheetBatchExcel } from '@/lib/excel-engine';
+import { formatUserFriendlyError } from '@/lib/error-formatter';
 
 interface TransferSheetViewProps {
   nettingRows: NettingRow[];
@@ -34,6 +35,8 @@ interface TransferSheetViewProps {
   batch?: TransferSheetBatch | null;
   makerName?: string;
   checkerName?: string;
+  allBatches?: Array<{ id: string; batchNumber: string; status: string; totalNetAmount: number; createdAt: string }>;
+  onSelectBatch?: (batchId: string) => void;
   onMakerSubmit: () => void;
   onCheckerApprove: () => void;
   onNavigateToUpload?: () => void;
@@ -88,6 +91,8 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
   currentRole,
   reviewStatus,
   batch,
+  allBatches,
+  onSelectBatch,
   onMakerSubmit,
   onCheckerApprove,
   onNavigateToUpload,
@@ -185,7 +190,7 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
       }
       setEditingModal(null);
     } catch (err: unknown) {
-      setAdjustmentError(err instanceof Error ? err.message : 'Adjustment failed.');
+      setAdjustmentError(formatUserFriendlyError(err));
     } finally {
       setIsSubmittingAdjustment(false);
     }
@@ -225,15 +230,31 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
       {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-xl font-bold text-slate-900 tracking-tight">
               Transfer Netting Sheet
             </h2>
-            {batch?.batchNumber && (
+            {allBatches && allBatches.length > 0 && onSelectBatch ? (
+              <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-600">Batch:</span>
+                <select
+                  value={batch?.id || ''}
+                  onChange={(e) => onSelectBatch(e.target.value)}
+                  className="bg-white border border-slate-300 text-xs font-mono font-bold text-slate-900 rounded-lg px-2 py-0.5 focus:outline-none focus:border-emerald-600 cursor-pointer shadow-2xs"
+                  title="Switch between different uploaded transfer sheet batches"
+                >
+                  {allBatches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.batchNumber} [{b.status}] — {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({b.totalNetAmount >= 0 ? '+' : ''}{b.totalNetAmount.toLocaleString('en-US', { maximumFractionDigits: 0 })} EGP)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : batch?.batchNumber ? (
               <span className="text-xs font-mono bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200">
                 {batch.batchNumber}
               </span>
-            )}
+            ) : null}
             {batch?.status && (
               <span
                 className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${

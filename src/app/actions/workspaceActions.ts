@@ -24,15 +24,18 @@ export async function fetchWorkspaceDataAction(): Promise<{
   users: import('@/lib/types').User[];
   uploadedFiles: import('@/lib/types').UploadedFileRecord[];
   latestBatch: import('@/lib/types').TransferSheetBatch | null;
+  allBatches: import('@/lib/repositories/transferRepository').TransferBatchSummary[];
 }> {
   // Fetch non-critical data first (these return [] on empty, not throw)
-  const [exceptions, auditLogs, checklists, users, latestBatch, uploadedFiles] = await Promise.all([
+  const { fetchAllTransferBatches } = await import('@/lib/repositories/transferRepository');
+  const [exceptions, auditLogs, checklists, users, latestBatch, uploadedFiles, allBatches] = await Promise.all([
     fetchOpenExceptions().catch(() => []),
     fetchAuditLogs(100).catch(() => []),
     fetchChecklistsFromDb().catch(() => []),
     fetchUsersFromDb().catch(() => []),
     fetchLatestTransferBatch().catch(() => null),
     fetchUploadedFilesFromDb().catch(() => []),
+    fetchAllTransferBatches().catch(() => []),
   ]);
 
   // Reference data & fund rules are critical — surface the error explicitly if DB is not seeded
@@ -62,7 +65,17 @@ export async function fetchWorkspaceDataAction(): Promise<{
     users,
     uploadedFiles,
     latestBatch,
+    allBatches,
   };
+}
+
+export async function fetchTransferBatchByIdAction(batchId: string) {
+  const caller = await getAuthenticatedServerUser();
+  if (!caller) {
+    throw new Error('401 Unauthorized: Authentication required.');
+  }
+  const { fetchTransferBatchById } = await import('@/lib/repositories/transferRepository');
+  return await fetchTransferBatchById(batchId);
 }
 
 export async function updateChecklistStatusAction(

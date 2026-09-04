@@ -178,8 +178,8 @@ export function Navbar({
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              <Database className="w-3.5 h-3.5" />
-              Reference Data
+              <Shield className="w-3.5 h-3.5 text-emerald-600" />
+              Admin Panel
             </button>
           )}
         </nav>

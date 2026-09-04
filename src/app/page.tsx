@@ -46,6 +46,7 @@ import {
 } from '@/app/actions/transferActions';
 import {
   fetchWorkspaceDataAction,
+  fetchTransferBatchByIdAction,
   updateChecklistStatusAction,
   reopenChecklistAction,
   approveChecklistAction,
@@ -65,6 +66,8 @@ import { getCurrentSessionUserAction, logoutUserAction } from '@/app/actions/aut
 import { applyFundRules } from '@/lib/rule-engine';
 import { calculateNettingSheet, FundReviewState } from '@/lib/netting-engine';
 import { TransferSheetBatch } from '@/lib/types';
+import { formatUserFriendlyError } from '@/lib/error-formatter';
+import { TransferBatchSummary } from '@/lib/repositories/transferRepository';
 
 export default function InvestmentPlatformPage() {
   const [currentUser, setCurrentUser] = useState<{
@@ -77,6 +80,7 @@ export default function InvestmentPlatformPage() {
 
   const [activeTab, setActiveTab] = useState<string>('orders');
   const [currentTransferBatch, setCurrentTransferBatch] = useState<TransferSheetBatch | null>(null);
+  const [allBatches, setAllBatches] = useState<TransferBatchSummary[]>([]);
 
   const [users, setUsers] = useState<UserType[]>([]);
   const [referenceDataList, setReferenceDataList] = useState<ReferenceData[]>([]);
@@ -123,6 +127,9 @@ export default function InvestmentPlatformPage() {
           setAuditLogs(wsResult.auditLogs || []);
           setChecklists(wsResult.checklists || []);
           setUsers(wsResult.users || []);
+          if (wsResult.allBatches) {
+            setAllBatches(wsResult.allBatches);
+          }
           if (wsResult.latestBatch) {
             setCurrentTransferBatch(wsResult.latestBatch);
           }
@@ -168,7 +175,7 @@ export default function InvestmentPlatformPage() {
         parsedRows
       );
       if (!allocResult.success || !allocResult.batch) {
-        setProcessingError(allocResult.error || 'Allocation processing encountered a failure.');
+        setProcessingError(formatUserFriendlyError(allocResult.error || 'Allocation processing encountered a failure.'));
         return;
       }
       if (allocResult.fileId) {
@@ -178,8 +185,9 @@ export default function InvestmentPlatformPage() {
         ]);
       }
       const wsData = await fetchWorkspaceDataAction();
-      if (wsData.success && wsData.uploadedFiles) {
-        setUploadedFiles(wsData.uploadedFiles);
+      if (wsData.success) {
+        if (wsData.uploadedFiles) setUploadedFiles(wsData.uploadedFiles);
+        if (wsData.allBatches) setAllBatches(wsData.allBatches);
       }
       setCurrentTransferBatch(allocResult.batch);
       const freshLogs = await fetchAuditLogsAction();
@@ -199,7 +207,7 @@ export default function InvestmentPlatformPage() {
     );
 
     if (!result.success || !result.report) {
-      setProcessingError(result.error || 'Processing pipeline encountered a failure.');
+      setProcessingError(formatUserFriendlyError(result.error || 'Processing pipeline encountered a failure.'));
       return;
     }
 
@@ -215,8 +223,9 @@ export default function InvestmentPlatformPage() {
     }
 
     const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.uploadedFiles) {
-      setUploadedFiles(wsData.uploadedFiles);
+    if (wsData.success) {
+      if (wsData.uploadedFiles) setUploadedFiles(wsData.uploadedFiles);
+      if (wsData.allBatches) setAllBatches(wsData.allBatches);
     }
 
     // Refresh audit logs from DB
@@ -395,6 +404,24 @@ export default function InvestmentPlatformPage() {
     const uploaderEl = document.getElementById('allocation-uploader-section');
     if (uploaderEl) {
       uploaderEl.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleSelectBatch = async (batchId: string) => {
+    try {
+      const selected = await fetchTransferBatchByIdAction(batchId);
+      if (selected) {
+        setCurrentTransferBatch(selected);
+        setReviewStatus(
+          selected.status === 'LOCKED'
+            ? 'APPROVED'
+            : selected.status === 'PENDING_REVIEW'
+            ? 'UNDER_REVIEW'
+            : 'DRAFT'
+        );
+      }
+    } catch (err) {
+      setProcessingError(formatUserFriendlyError(err));
     }
   };
 
@@ -728,6 +755,7 @@ export default function InvestmentPlatformPage() {
               if (wsData.checklists) setChecklists(wsData.checklists);
               if (wsData.auditLogs) setAuditLogs(wsData.auditLogs);
               if (wsData.latestBatch) setCurrentTransferBatch(wsData.latestBatch);
+              if (wsData.allBatches) setAllBatches(wsData.allBatches);
             }
           });
         }}
@@ -737,9 +765,20 @@ export default function InvestmentPlatformPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {processingError && (
-          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-medium flex items-center justify-between">
-            <span>Processing Pipeline Exception: {processingError}</span>
-            <button onClick={() => setProcessingError(null)} className="text-rose-600 hover:text-rose-900 font-bold">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-sm font-medium flex items-center justify-between shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                <span className="font-bold text-xs">⚠</span>
+              </div>
+              <div>
+                <p className="font-bold text-rose-950 text-xs uppercase tracking-wider">Operational Notice</p>
+                <p className="text-xs text-rose-800 mt-0.5">{processingError}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setProcessingError(null)}
+              className="text-xs text-rose-700 hover:text-rose-950 font-bold px-3 py-1.5 rounded-lg hover:bg-rose-100/60 transition"
+            >
               Dismiss
             </button>
           </div>
@@ -802,6 +841,8 @@ export default function InvestmentPlatformPage() {
               currentRole={currentUser.role}
               reviewStatus={reviewStatus}
               batch={currentTransferBatch}
+              allBatches={allBatches}
+              onSelectBatch={handleSelectBatch}
               makerName={makerName}
               checkerName={checkerName}
               onMakerSubmit={handleMakerSubmit}
