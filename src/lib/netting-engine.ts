@@ -1,6 +1,5 @@
-// Transfer Netting Engine - Grouping, Netting & Summary Calculation
-
 import { NettingRow, RawTransactionRow, ReferenceData } from './types';
+import { addFinancial, calculateNetTransfer, roundFinancial } from './services/financialMath';
 
 export interface NettingSummary {
   rows: NettingRow[];
@@ -61,9 +60,9 @@ export function calculateNettingSheet(
     // net_settle = order_value - total_commission; this is the actual cash transferred to custodian
     const settledValue = tx.netSettle ?? tx.orderValue ?? 0;
     if (orderSide === 'BUY') {
-      item.buy += settledValue;
+      item.buy = addFinancial(item.buy, settledValue, 4);
     } else if (orderSide === 'SELL') {
-      item.sell += settledValue;
+      item.sell = addFinancial(item.sell, settledValue, 4);
     }
   }
 
@@ -76,9 +75,9 @@ export function calculateNettingSheet(
     const symbolName = val.ref ? val.ref.symbolName : key;
     const actualSymbol = val.ref ? val.ref.actualSymbol : key;
 
-    const buyTotal = Math.round(val.buy * 100) / 100;
-    const sellTotal = Math.round(val.sell * 100) / 100;
-    const netAmount = Math.round((sellTotal - buyTotal) * 100) / 100;
+    const buyTotal = roundFinancial(val.buy, 2);
+    const sellTotal = roundFinancial(val.sell, 2);
+    const netAmount = calculateNetTransfer(sellTotal, buyTotal, 2);
 
     let status: 'NEUTRAL' | 'POSITIVE' | 'NEGATIVE' = 'NEUTRAL';
     if (netAmount > 0) status = 'POSITIVE';
@@ -102,18 +101,18 @@ export function calculateNettingSheet(
       approvedAt: fundState.approvedAt,
     });
 
-    totalBuy += buyTotal;
-    totalSell += sellTotal;
+    totalBuy = addFinancial(totalBuy, buyTotal, 2);
+    totalSell = addFinancial(totalSell, sellTotal, 2);
   }
 
   rows.sort((a, b) => a.symbolCode.localeCompare(b.symbolCode));
 
-  const totalNet = Math.round((totalSell - totalBuy) * 100) / 100;
+  const totalNet = calculateNetTransfer(totalSell, totalBuy, 2);
 
   return {
     rows,
-    totalBuy: Math.round(totalBuy * 100) / 100,
-    totalSell: Math.round(totalSell * 100) / 100,
+    totalBuy: roundFinancial(totalBuy, 2),
+    totalSell: roundFinancial(totalSell, 2),
     totalNet,
     totalSymbols: rows.length,
   };

@@ -194,9 +194,9 @@ export async function resetDailyChecklistShiftAction() {
   await resetDailyChecklistsInDb();
 }
 
-export async function fetchAuditLogsAction(limit: number = 200) {
-  const { fetchAuditLogs } = await import('@/lib/repositories/auditRepository');
-  return await fetchAuditLogs(limit);
+export async function fetchAuditLogsAction(limit: number = 50, cursor?: string) {
+  const { fetchAuditLogsPaginated } = await import('@/lib/repositories/auditRepository');
+  return await fetchAuditLogsPaginated(limit, cursor);
 }
 
 export async function fetchHistoricalFileRowsAction(

@@ -8,6 +8,14 @@ import {
   TransferSheetBatch,
   TransferSheetLine,
 } from '../types';
+import {
+  addFinancial,
+  calculateFinalTransfer,
+  calculateNetTransfer,
+  divFinancial,
+  mulFinancial,
+  roundFinancial,
+} from './financialMath';
 
 export interface AllocationPipelineResult {
   batch: Omit<TransferSheetBatch, 'id' | 'createdAt' | 'updatedAt'>;
@@ -183,7 +191,7 @@ export function processAllocationFile(
     let price = Number(row.price) || 0;
     if (price <= 0) {
       if (row.orderValue && Number(row.orderValue) > 0 && allocQty > 0) {
-        price = Number(row.orderValue) / allocQty;
+        price = divFinancial(row.orderValue, allocQty, 6);
       } else if (matchedRef && matchedRef.navUnitPrice && matchedRef.navUnitPrice > 0) {
         price = matchedRef.navUnitPrice;
       }
@@ -204,8 +212,8 @@ export function processAllocationFile(
       continue;
     }
 
-    // Row is Valid -> Calculate Financial Amount: Allocated Quantity × Price
-    const lineExecutionAmount = allocQty * price;
+    // Row is Valid -> Calculate Financial Amount: Allocated Quantity × Price with Decimal.js precision
+    const lineExecutionAmount = mulFinancial(allocQty, price, 4);
     importedCount++;
 
     const targetCode = matchedRef ? matchedRef.symbolCode : sym;
@@ -225,27 +233,27 @@ export function processAllocationFile(
 
     const fundAgg = fundMap.get(targetCode)!;
     if (side === 'BUY') {
-      fundAgg.systemBuyTotal += lineExecutionAmount;
+      fundAgg.systemBuyTotal = addFinancial(fundAgg.systemBuyTotal, lineExecutionAmount, 4);
     } else {
-      fundAgg.systemSellTotal += lineExecutionAmount;
+      fundAgg.systemSellTotal = addFinancial(fundAgg.systemSellTotal, lineExecutionAmount, 4);
     }
     fundAgg.orderCount++;
   }
 
-  // Generate draft lines
+  // Generate draft lines with financial precision
   const lines: Omit<TransferSheetLine, 'id'>[] = [];
   let totalBatchBuy = 0;
   let totalBatchSell = 0;
 
   for (const agg of fundMap.values()) {
-    const systemBuy = Math.round(agg.systemBuyTotal * 10000) / 10000;
-    const systemSell = Math.round(agg.systemSellTotal * 10000) / 10000;
-    const systemNet = Math.round((systemSell - systemBuy) * 10000) / 10000;
+    const systemBuy = roundFinancial(agg.systemBuyTotal, 4);
+    const systemSell = roundFinancial(agg.systemSellTotal, 4);
+    const systemNet = calculateNetTransfer(systemSell, systemBuy, 4);
     const initialAdjustment = 0;
-    const finalTransfer = systemNet + initialAdjustment;
+    const finalTransfer = calculateFinalTransfer(systemNet, initialAdjustment, 4);
 
-    totalBatchBuy += systemBuy;
-    totalBatchSell += systemSell;
+    totalBatchBuy = addFinancial(totalBatchBuy, systemBuy, 4);
+    totalBatchSell = addFinancial(totalBatchSell, systemSell, 4);
 
     lines.push({
       batchId: '',
@@ -264,7 +272,7 @@ export function processAllocationFile(
   // Sort alphabetically by Symbol Code
   lines.sort((a, b) => a.symbolCode.localeCompare(b.symbolCode, undefined, { sensitivity: 'base' }));
 
-  const totalBatchNet = Math.round((totalBatchSell - totalBatchBuy) * 10000) / 10000;
+  const totalBatchNet = calculateNetTransfer(totalBatchSell, totalBatchBuy, 4);
   const batchNumber = `TRF-${businessDate.replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
 
   const batch: Omit<TransferSheetBatch, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -272,8 +280,8 @@ export function processAllocationFile(
     allocationFileId,
     businessDate,
     status: 'DRAFT',
-    totalBuyAmount: Math.round(totalBatchBuy * 10000) / 10000,
-    totalSellAmount: Math.round(totalBatchSell * 10000) / 10000,
+    totalBuyAmount: roundFinancial(totalBatchBuy, 4),
+    totalSellAmount: roundFinancial(totalBatchSell, 4),
     totalNetAmount: totalBatchNet,
     makerId,
     makerName,

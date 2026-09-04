@@ -59,14 +59,23 @@ export async function insertAuditLogsBatch(logs: AuditLog[]): Promise<void> {
   }
 }
 
-export async function fetchAuditLogs(limit: number = 200, cursor?: string): Promise<AuditLog[]> {
+export interface PaginatedAuditLogs {
+  logs: AuditLog[];
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
+export async function fetchAuditLogsPaginated(
+  limit: number = 50,
+  cursor?: string
+): Promise<PaginatedAuditLogs> {
   try {
     const supabase = await getDbClient();
     let query = supabase
       .from('audit_logs')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .limit(limit + 1);
 
     if (cursor) {
       query = query.lt('created_at', cursor);
@@ -79,7 +88,11 @@ export async function fetchAuditLogs(limit: number = 200, cursor?: string): Prom
         .select('id, full_name, email'),
     ]);
 
-    if (error || !data) return [];
+    if (error || !data) return { logs: [], hasMore: false };
+
+    const hasMore = data.length > limit;
+    const records = hasMore ? data.slice(0, limit) : data;
+    const nextCursor = records.length > 0 ? String(records[records.length - 1].created_at) : undefined;
 
     const userMap = new Map<string, string>();
     if (users) {
@@ -88,7 +101,7 @@ export async function fetchAuditLogs(limit: number = 200, cursor?: string): Prom
       }
     }
 
-    return data.map((item: Record<string, unknown>) => {
+    const logs: AuditLog[] = records.map((item: Record<string, unknown>) => {
       const uId = item.user_id ? String(item.user_id) : '';
       const newVals = (item.new_values as Record<string, unknown>) || undefined;
       const oldVals = (item.old_values as Record<string, unknown>) || undefined;
@@ -117,8 +130,19 @@ export async function fetchAuditLogs(limit: number = 200, cursor?: string): Prom
         timestampUtc: String(item.created_at),
       };
     });
+
+    return {
+      logs,
+      nextCursor: hasMore ? nextCursor : undefined,
+      hasMore,
+    };
   } catch (err) {
     console.warn('Audit repository fetch notice:', err);
-    return [];
+    return { logs: [], hasMore: false };
   }
+}
+
+export async function fetchAuditLogs(limit: number = 200, cursor?: string): Promise<AuditLog[]> {
+  const result = await fetchAuditLogsPaginated(limit, cursor);
+  return result.logs;
 }

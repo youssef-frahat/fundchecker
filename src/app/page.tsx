@@ -1,4 +1,5 @@
 // Main Workspace Component (Production Engine Integrated - Zero Mock Data)
+// Refactored with Domain Hooks for Enterprise Architecture & Maintainability
 
 'use client';
 
@@ -19,13 +20,9 @@ import { ScheduleReminderSnackbar } from '@/components/common/ScheduleReminderSn
 import { FourEyesAlertSnackbar } from '@/components/common/FourEyesAlertSnackbar';
 
 import {
-  AdjustmentCategory,
   AuditLog,
-  ChecklistItem,
-  ExceptionRecord,
   FundRule,
   GeneratedTransactionRow,
-  NettingRow,
   RawTransactionRow,
   ReferenceData,
   UploadedFileRecord,
@@ -39,26 +36,11 @@ import {
   bulkImportReferenceDataAction,
 } from '@/app/actions/referenceActions';
 import { processTradeFileAction } from '@/app/actions/processingActions';
-import {
-  uploadAllocationFileAction,
-  adjustTransferLineAction,
-  submitTransferBatchAction,
-  reviewTransferBatchAction,
-  getLatestTransferBatchAction,
-} from '@/app/actions/transferActions';
+import { uploadAllocationFileAction } from '@/app/actions/transferActions';
 import {
   fetchWorkspaceDataAction,
-  fetchTransferBatchByIdAction,
-  updateChecklistStatusAction,
-  reopenChecklistAction,
-  approveChecklistAction,
-  resolveLateChecklistAction,
-  resetDailyChecklistsAction,
   saveAuditLogAction,
   fetchAuditLogsAction,
-  resolveExceptionAction,
-  resolveAllExceptionsAction,
-  cleanResolvedExceptionsAction,
 } from '@/app/actions/workspaceActions';
 import {
   createUserAction,
@@ -67,10 +49,12 @@ import {
 } from '@/app/actions/userActions';
 import { getCurrentSessionUserAction, logoutUserAction } from '@/app/actions/authActions';
 import { applyFundRules } from '@/lib/rule-engine';
-import { calculateNettingSheet, FundReviewState } from '@/lib/netting-engine';
-import { TransferSheetBatch } from '@/lib/types';
 import { formatUserFriendlyError } from '@/lib/error-formatter';
-import { TransferBatchSummary } from '@/lib/repositories/transferRepository';
+
+// Domain Hooks
+import { useTransferWorkspace } from '@/hooks/useTransferWorkspace';
+import { useChecklistWorkspace } from '@/hooks/useChecklistWorkspace';
+import { useExceptionWorkspace } from '@/hooks/useExceptionWorkspace';
 
 export default function InvestmentPlatformPage() {
   const [currentUser, setCurrentUser] = useState<{
@@ -82,30 +66,99 @@ export default function InvestmentPlatformPage() {
   const [isVerifyingSession, setIsVerifyingSession] = useState<boolean>(true);
 
   const [activeTab, setActiveTab] = useState<string>('orders');
-  const [currentTransferBatch, setCurrentTransferBatch] = useState<TransferSheetBatch | null>(null);
-  const [allBatches, setAllBatches] = useState<TransferBatchSummary[]>([]);
-
   const [users, setUsers] = useState<UserType[]>([]);
   const [referenceDataList, setReferenceDataList] = useState<ReferenceData[]>([]);
   const [fundRules, setFundRules] = useState<FundRule[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileRecord[]>([]);
   const [rawTransactions, setRawTransactions] = useState<RawTransactionRow[]>([]);
   const [serverGeneratedRows, setServerGeneratedRows] = useState<GeneratedTransactionRow[]>([]);
-  const [checklists, setChecklists] = useState<ChecklistItem[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [exceptions, setExceptions] = useState<ExceptionRecord[]>([]);
   const [processingError, setProcessingError] = useState<string | null>(null);
-
-  // Netting Review Workflow State
-  const [reviewStatus, setReviewStatus] = useState<'DRAFT' | 'GENERATED' | 'UNDER_REVIEW' | 'APPROVED'>('DRAFT');
-  const [makerName, setMakerName] = useState<string>('');
-  const [checkerName, setCheckerName] = useState<string>('');
-  const [perFundReviewStates, setPerFundReviewStates] = useState<Record<string, FundReviewState>>({});
   const [dbSetupError, setDbSetupError] = useState<string | null>(null);
-  const [fourEyesError, setFourEyesError] = useState<{
-    message: string;
-    makerName?: string;
-  } | null>(null);
+
+  // Keyset Cursor Paginated Audit Trail State
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditNextCursor, setAuditNextCursor] = useState<string | undefined>(undefined);
+  const [auditHasMore, setAuditHasMore] = useState<boolean>(false);
+  const [isLoadingMoreAuditLogs, setIsLoadingMoreAuditLogs] = useState<boolean>(false);
+
+  const addAuditLog = async (
+    action: string,
+    entityName: string,
+    entityId?: string,
+    newValues?: Record<string, unknown>
+  ) => {
+    const operatorName = currentUser?.fullName || currentUser?.email || 'System User';
+    const operatorId = currentUser?.id && currentUser.id.includes('-') ? currentUser.id : 'system';
+
+    const enrichedNewValues = {
+      ...newValues,
+      userName: operatorName,
+      userEmail: currentUser?.email,
+    };
+
+    const newLog: AuditLog = {
+      id: `log-${Date.now()}`,
+      userId: operatorId,
+      userName: operatorName,
+      action,
+      entityName,
+      entityId,
+      ipAddress: 'CLIENT',
+      timestampUtc: new Date().toISOString(),
+      newValues: enrichedNewValues,
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
+    await saveAuditLogAction(newLog);
+  };
+
+  const refreshAuditLogs = async () => {
+    const fresh = await fetchAuditLogsAction(50);
+    if (fresh.logs) {
+      setAuditLogs(fresh.logs);
+      setAuditNextCursor(fresh.nextCursor);
+      setAuditHasMore(fresh.hasMore);
+    }
+  };
+
+  const handleLoadMoreAuditLogs = async () => {
+    if (!auditNextCursor || isLoadingMoreAuditLogs) return;
+    setIsLoadingMoreAuditLogs(true);
+    try {
+      const res = await fetchAuditLogsAction(50, auditNextCursor);
+      if (res.logs && res.logs.length > 0) {
+        setAuditLogs((prev) => [...prev, ...res.logs]);
+        setAuditNextCursor(res.nextCursor);
+        setAuditHasMore(res.hasMore);
+      } else {
+        setAuditHasMore(false);
+      }
+    } catch (err) {
+      console.warn('Failed to load more audit logs:', err);
+    } finally {
+      setIsLoadingMoreAuditLogs(false);
+    }
+  };
+
+  // Domain Workspaces
+  const transferWs = useTransferWorkspace({
+    currentUser,
+    rawTransactions,
+    referenceDataList,
+    onAuditLog: addAuditLog,
+    onError: (err) => setProcessingError(err),
+    onRefreshAuditLogs: refreshAuditLogs,
+  });
+
+  const checklistWs = useChecklistWorkspace({
+    currentUser,
+    onAuditLog: addAuditLog,
+  });
+
+  const exceptionWs = useExceptionWorkspace({
+    onAuditLog: addAuditLog,
+    onError: (err) => setProcessingError(err),
+    onRefreshAuditLogs: refreshAuditLogs,
+  });
 
   useEffect(() => {
     async function loadDbData() {
@@ -115,9 +168,10 @@ export default function InvestmentPlatformPage() {
           if (savedTab) setActiveTab(savedTab);
         }
 
-        const [{ user: sessionUser }, wsResult] = await Promise.all([
+        const [{ user: sessionUser }, wsResult, initialAuditResult] = await Promise.all([
           getCurrentSessionUserAction(),
           fetchWorkspaceDataAction(),
+          fetchAuditLogsAction(50).catch(() => ({ logs: [], hasMore: false, nextCursor: undefined as string | undefined })),
         ]);
 
         if (sessionUser) {
@@ -129,17 +183,19 @@ export default function InvestmentPlatformPage() {
           }
           setReferenceDataList(wsResult.refData || []);
           setFundRules(wsResult.fundRules || []);
-          setUploadedFiles(wsResult.uploadedFiles || []);
-          setExceptions(wsResult.exceptions || []);
-          setAuditLogs(wsResult.auditLogs || []);
-          setChecklists(wsResult.checklists || []);
+          exceptionWs.setExceptions(wsResult.exceptions || []);
+          checklistWs.setChecklists(wsResult.checklists || []);
           setUsers(wsResult.users || []);
-          if (wsResult.allBatches) {
-            setAllBatches(wsResult.allBatches);
-          }
+          setUploadedFiles(wsResult.uploadedFiles || []);
+          transferWs.setAllBatches(wsResult.allBatches || []);
           if (wsResult.latestBatch) {
-            setCurrentTransferBatch(wsResult.latestBatch);
+            transferWs.setCurrentTransferBatch(wsResult.latestBatch);
           }
+        }
+        if (initialAuditResult && initialAuditResult.logs) {
+          setAuditLogs(initialAuditResult.logs);
+          setAuditNextCursor(initialAuditResult.nextCursor);
+          setAuditHasMore(initialAuditResult.hasMore);
         }
       } catch (err) {
         console.warn('Session or workspace data load notice:', err);
@@ -156,14 +212,14 @@ export default function InvestmentPlatformPage() {
     const interval = setInterval(async () => {
       const wsData = await fetchWorkspaceDataAction();
       if (wsData.success) {
-        if (wsData.checklists) setChecklists(wsData.checklists);
-        if (wsData.auditLogs) setAuditLogs(wsData.auditLogs);
+        if (wsData.checklists) checklistWs.setChecklists(wsData.checklists);
+        if (wsData.auditLogs && auditLogs.length <= 50) {
+          setAuditLogs(wsData.auditLogs);
+        }
       }
     }, 8000);
     return () => clearInterval(interval);
-  }, [activeTab]);
-
-
+  }, [activeTab, auditLogs.length]);
 
   const handleFileUpload = async (
     fileRecord: UploadedFileRecord,
@@ -194,15 +250,14 @@ export default function InvestmentPlatformPage() {
       const wsData = await fetchWorkspaceDataAction();
       if (wsData.success) {
         if (wsData.uploadedFiles) setUploadedFiles(wsData.uploadedFiles);
-        if (wsData.allBatches) setAllBatches(wsData.allBatches);
+        if (wsData.allBatches) transferWs.setAllBatches(wsData.allBatches);
       }
-      setCurrentTransferBatch(allocResult.batch);
-      const freshLogs = await fetchAuditLogsAction();
-      setAuditLogs(freshLogs);
+      transferWs.setCurrentTransferBatch(allocResult.batch);
+      await refreshAuditLogs();
       return;
     }
 
-    // Otherwise: Standard Orders File pipeline for Transaction Reports (completely decoupled from netting)
+    // Otherwise: Standard Orders File pipeline for Transaction Reports
     setRawTransactions(parsedRows);
 
     // Execute Production Processing Engine via Server Action
@@ -226,478 +281,39 @@ export default function InvestmentPlatformPage() {
 
     // Refresh exceptions and audit logs from database execution report
     if (report.exceptions.length > 0) {
-      setExceptions((prev) => [...report.exceptions, ...prev]);
+      exceptionWs.setExceptions((prev) => [...report.exceptions, ...prev]);
     }
 
     const wsData = await fetchWorkspaceDataAction();
     if (wsData.success) {
       if (wsData.uploadedFiles) setUploadedFiles(wsData.uploadedFiles);
-      if (wsData.allBatches) setAllBatches(wsData.allBatches);
+      if (wsData.allBatches) transferWs.setAllBatches(wsData.allBatches);
     }
 
-    // Refresh audit logs from DB
-    const freshLogs = await fetchAuditLogsAction();
-    setAuditLogs(freshLogs);
+    await refreshAuditLogs();
   };
 
-  const handleAdjustTransferLine = async (
-    lineId: string,
-    symbolCode: string,
-    systemNetSnapshot: number,
-    oldAdjustmentAmount: number,
-    newAdjustmentAmount: number,
-    adjustmentCategory: AdjustmentCategory,
-    reason: string
-  ) => {
-    if (!currentTransferBatch) return;
-    const res = await adjustTransferLineAction(
-      currentTransferBatch.id,
-      lineId,
-      symbolCode,
-      systemNetSnapshot,
-      oldAdjustmentAmount,
-      newAdjustmentAmount,
-      adjustmentCategory,
-      reason
-    );
-    if (!res.success) {
-      throw new Error(res.error || 'Failed to adjust line');
-    }
-    const freshBatch = await getLatestTransferBatchAction();
-    if (freshBatch) setCurrentTransferBatch(freshBatch);
-    const freshLogs = await fetchAuditLogsAction();
-    setAuditLogs(freshLogs);
-  };
+  const clientGeneratedRows: GeneratedTransactionRow[] =
+    fundRules.length > 0 && referenceDataList.length > 0
+      ? rawTransactions.map((tx) => {
+          const symClean = tx.symbol.trim().toLowerCase();
+          const descClean = tx.symbolDescription.trim().toLowerCase();
+          const refMatch = referenceDataList.find(
+            (r) =>
+              r.symbolCode.toLowerCase() === symClean ||
+              r.actualSymbol.toLowerCase() === symClean ||
+              r.symbolName.toLowerCase() === descClean ||
+              r.symbolName.toLowerCase() === symClean
+          );
+          const fundType = refMatch ? refMatch.fundType || 'T0' : 'T0';
+          return applyFundRules(tx, fundType, fundRules);
+        })
+      : [];
 
-  const addAuditLog = async (action: string, entityName: string, entityId?: string, newValues?: Record<string, unknown>) => {
-    const operatorName = currentUser?.fullName || currentUser?.email || 'System User';
-    const operatorId = currentUser?.id && currentUser.id.includes('-') ? currentUser.id : 'system';
+  const effectiveGeneratedRows: GeneratedTransactionRow[] =
+    serverGeneratedRows.length > 0 ? serverGeneratedRows : clientGeneratedRows;
 
-    const enrichedNewValues = {
-      ...newValues,
-      userName: operatorName,
-      userEmail: currentUser?.email,
-    };
-
-    const newLog: AuditLog = {
-      id: `log-${Date.now()}`,
-      userId: operatorId,
-      userName: operatorName,
-      action,
-      entityName,
-      entityId,
-      ipAddress: 'CLIENT',
-      timestampUtc: new Date().toISOString(),
-      newValues: enrichedNewValues,
-    };
-    setAuditLogs((prev) => [newLog, ...prev]);
-    await saveAuditLogAction(newLog);
-  };
-
-  const clientGeneratedRows: GeneratedTransactionRow[] = (fundRules.length > 0 && referenceDataList.length > 0)
-    ? rawTransactions.map((tx) => {
-        const symClean = tx.symbol.trim().toLowerCase();
-        const descClean = tx.symbolDescription.trim().toLowerCase();
-        const refMatch = referenceDataList.find(
-          (r) =>
-            r.symbolCode.toLowerCase() === symClean ||
-            r.actualSymbol.toLowerCase() === symClean ||
-            r.symbolName.toLowerCase() === descClean ||
-            r.symbolName.toLowerCase() === symClean
-        );
-        const fundType = refMatch ? (refMatch.fundType || 'T0') : 'T0';
-        return applyFundRules(tx, fundType, fundRules);
-      })
-    : [];
-
-  const effectiveGeneratedRows: GeneratedTransactionRow[] = serverGeneratedRows.length > 0
-    ? serverGeneratedRows
-    : clientGeneratedRows;
-
-
-  const fallbackNetting = rawTransactions.length > 0 && referenceDataList.length > 0
-    ? calculateNettingSheet(rawTransactions, referenceDataList, 'symbol', perFundReviewStates)
-    : null;
-
-  const effectiveNettingRows: NettingRow[] = (currentTransferBatch?.lines && currentTransferBatch.lines.length > 0)
-    ? currentTransferBatch.lines.map((l) => ({
-        symbolCode: l.symbolCode,
-        symbolName: l.symbolName,
-        actualSymbol: l.actualSymbol || l.symbolCode,
-        currency: 'EGP' as const,
-        buyTotal: l.systemBuyAmount,
-        sellTotal: l.systemSellAmount,
-        netAmount: l.finalTransferAmount,
-        status: (l.finalTransferAmount > 0 ? 'POSITIVE' : l.finalTransferAmount < 0 ? 'NEGATIVE' : 'NEUTRAL') as 'NEUTRAL' | 'POSITIVE' | 'NEGATIVE',
-        reviewStatus: (currentTransferBatch.status === 'APPROVED' || currentTransferBatch.status === 'LOCKED'
-          ? 'APPROVED'
-          : currentTransferBatch.status === 'PENDING_REVIEW'
-          ? 'UNDER_REVIEW'
-          : 'DRAFT') as 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED',
-      }))
-    : (fallbackNetting?.rows || []);
-
-  const effectiveTotalBuy = currentTransferBatch ? currentTransferBatch.totalBuyAmount : (fallbackNetting?.totalBuy || 0);
-  const effectiveTotalSell = currentTransferBatch ? currentTransferBatch.totalSellAmount : (fallbackNetting?.totalSell || 0);
-  const effectiveTotalNet = currentTransferBatch ? currentTransferBatch.totalNetAmount : (fallbackNetting?.totalNet || 0);
-
-  const handleMakerSubmit = async () => {
-    if (currentTransferBatch) {
-      await submitTransferBatchAction(currentTransferBatch.id);
-      const freshBatch = await getLatestTransferBatchAction();
-      if (freshBatch) setCurrentTransferBatch(freshBatch);
-    }
-    setReviewStatus('UNDER_REVIEW');
-    setMakerName(currentUser?.fullName || 'Maker');
-
-    const updatedStates: Record<string, FundReviewState> = {};
-    effectiveNettingRows.forEach((r) => {
-      updatedStates[r.symbolCode] = {
-        reviewStatus: 'UNDER_REVIEW',
-        makerName: currentUser?.fullName || 'Maker',
-      };
-    });
-    setPerFundReviewStates(updatedStates);
-    addAuditLog('SUBMIT_REVIEW', 'TRANSFER_SHEET', currentTransferBatch?.id || 'sheet-all', { status: 'UNDER_REVIEW' });
-  };
-
-  const handleCheckerApprove = async () => {
-    if (currentTransferBatch) {
-      const res = await reviewTransferBatchAction(currentTransferBatch.id, 'APPROVE');
-      if (!res.success) {
-        if (res.error?.includes('Four-Eyes') || res.error?.toLowerCase().includes('maker cannot approve')) {
-          setFourEyesError({
-            message: res.error,
-            makerName: currentTransferBatch.makerName || makerName,
-          });
-        } else {
-          setProcessingError(res.error || 'Failed to approve transfer sheet batch.');
-        }
-        return;
-      }
-      const freshBatch = await getLatestTransferBatchAction();
-      if (freshBatch) setCurrentTransferBatch(freshBatch);
-    } else {
-      const effectiveMaker = makerName || '';
-      const userIdentities = [currentUser?.fullName, currentUser?.email, currentUser?.id].filter(Boolean);
-      if (effectiveMaker && userIdentities.includes(effectiveMaker)) {
-        setFourEyesError({
-          message: `Four-Eyes Principle Violation: Maker cannot approve their own submitted transfer sheet (${effectiveMaker}). A different checker must review.`,
-          makerName: effectiveMaker,
-        });
-        return;
-      }
-    }
-
-    setReviewStatus('APPROVED');
-    setCheckerName(currentUser?.fullName || 'Checker');
-
-    const updatedStates: Record<string, FundReviewState> = {};
-    effectiveNettingRows.forEach((r) => {
-      updatedStates[r.symbolCode] = {
-        reviewStatus: 'APPROVED',
-        makerName: makerName || 'Maker',
-        checkerName: currentUser?.fullName || 'Checker',
-        approvedAt: new Date().toISOString(),
-      };
-    });
-    setPerFundReviewStates(updatedStates);
-    addAuditLog('APPROVE_TRANSFER', 'TRANSFER_SHEET', currentTransferBatch?.id || 'sheet-all', { status: 'APPROVED' });
-  };
-
-  const handleReviewSingleFund = (symbolCode: string, newStatus: 'UNDER_REVIEW' | 'APPROVED') => {
-    if (newStatus === 'APPROVED') {
-      const fundMaker = perFundReviewStates[symbolCode]?.makerName || makerName;
-      const userIdentities = [currentUser?.fullName, currentUser?.email, currentUser?.id].filter(Boolean);
-      if (fundMaker && userIdentities.includes(fundMaker)) {
-        setFourEyesError({
-          message: `Four-Eyes Principle Violation: Maker cannot approve their own submitted fund sheet for ${symbolCode} (${fundMaker}). A different checker must review.`,
-          makerName: fundMaker,
-        });
-        return;
-      }
-    }
-
-    setPerFundReviewStates((prev) => ({
-      ...prev,
-      [symbolCode]: {
-        reviewStatus: newStatus,
-        makerName: newStatus === 'UNDER_REVIEW' ? currentUser?.fullName : prev[symbolCode]?.makerName,
-        checkerName: newStatus === 'APPROVED' ? currentUser?.fullName : prev[symbolCode]?.checkerName,
-        approvedAt: newStatus === 'APPROVED' ? new Date().toISOString() : undefined,
-      },
-    }));
-
-    addAuditLog(
-      newStatus === 'UNDER_REVIEW' ? 'SUBMIT_SINGLE_FUND' : 'APPROVE_SINGLE_FUND',
-      'FUND_SHEET',
-      symbolCode,
-      { symbolCode, newStatus }
-    );
-  };
-
-  const handleNewTransferSheet = () => {
-    setCurrentTransferBatch(null);
-    setReviewStatus('DRAFT');
-    setMakerName('');
-    setCheckerName('');
-    setPerFundReviewStates({});
-    const uploaderEl = document.getElementById('allocation-uploader-section');
-    if (uploaderEl) {
-      uploaderEl.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  const handleSelectBatch = async (batchId: string) => {
-    try {
-      const selected = await fetchTransferBatchByIdAction(batchId);
-      if (selected) {
-        setCurrentTransferBatch(selected);
-        setReviewStatus(
-          selected.status === 'LOCKED'
-            ? 'APPROVED'
-            : selected.status === 'PENDING_REVIEW'
-            ? 'UNDER_REVIEW'
-            : 'DRAFT'
-        );
-      }
-    } catch (err) {
-      setProcessingError(formatUserFriendlyError(err));
-    }
-  };
-
-  const handleToggleChecklist = async (itemId: string, nextStatus: boolean = true) => {
-    if (!currentUser) return;
-    const userEmail = currentUser.email;
-    const userName = currentUser.fullName;
-    const userId = currentUser.id;
-
-    setChecklists((prev) =>
-      prev.map((c) =>
-        c.id === itemId || c.checklistId === itemId
-          ? nextStatus
-            ? {
-                ...c,
-                isCompleted: true,
-                completedBy: userEmail,
-                completedByName: userName,
-                completedAt: new Date().toISOString(),
-              }
-            : {
-                ...c,
-                isCompleted: false,
-                completedBy: undefined,
-                completedByName: undefined,
-                completedAt: undefined,
-              }
-          : c
-      )
-    );
-
-    await updateChecklistStatusAction(itemId, nextStatus, userEmail, userName, userId);
-    addAuditLog(
-      nextStatus ? 'CHECKLIST_COMPLETE' : 'CHECKLIST_UNDO',
-      'CHECKLIST_ITEM',
-      itemId,
-      { status: nextStatus ? 'COMPLETED' : 'UNCHECKED' }
-    );
-
-    // Refresh checklists from database to guarantee cross-user parity
-    const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.checklists) {
-      setChecklists(wsData.checklists);
-    }
-  };
-
-  const handleApproveChecklist = async (itemId: string) => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') return;
-    const userEmail = currentUser.email;
-    const userName = currentUser.fullName;
-    const userId = currentUser.id;
-
-    setChecklists((prev) =>
-      prev.map((c) =>
-        c.id === itemId || c.checklistId === itemId
-          ? {
-              ...c,
-              isApproved: true,
-              approvedBy: userEmail,
-              approvedByName: userName,
-              approvedAt: new Date().toISOString(),
-            }
-          : c
-      )
-    );
-
-    await approveChecklistAction(itemId, userEmail, userName, userId);
-    addAuditLog('CHECKLIST_APPROVE', 'CHECKLIST_ITEM', itemId, {
-      approvedBy: userName,
-      note: 'Permanently locked by Super Admin',
-    });
-
-    const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.checklists) {
-      setChecklists(wsData.checklists);
-    }
-  };
-
-  const handleReopenChecklist = async (itemId: string, reason: string) => {
-    if (!currentUser) return;
-    const userEmail = currentUser.email;
-    const userName = currentUser.fullName;
-    const userId = currentUser.id;
-
-    setChecklists((prev) =>
-      prev.map((c) =>
-        c.id === itemId || c.checklistId === itemId
-          ? {
-              ...c,
-              isCompleted: false,
-              isApproved: false,
-              reopenedBy: userEmail,
-              reopenedByName: userName,
-              reopenedAt: new Date().toISOString(),
-              reopenReason: reason,
-            }
-          : c
-      )
-    );
-
-    await reopenChecklistAction(itemId, userEmail, userName, reason, userId);
-    addAuditLog('REOPEN_CHECKLIST', 'CHECKLIST_ITEM', itemId, { reason });
-
-    // Refresh checklists from database to guarantee cross-user parity
-    const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.checklists) {
-      setChecklists(wsData.checklists);
-    }
-  };
-
-  const handleResolveLateChecklist = async (
-    itemId: string,
-    resolution: 'RESOLVED' | 'BREACHED',
-    reason: string
-  ) => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') return;
-    const userEmail = currentUser.email;
-    const userName = currentUser.fullName;
-    const userId = currentUser.id;
-
-    setChecklists((prev) =>
-      prev.map((c) =>
-        c.id === itemId || c.checklistId === itemId
-          ? resolution === 'RESOLVED'
-            ? {
-                ...c,
-                isCompleted: true,
-                isApproved: true,
-                completedByName: `${userName} (Late Override)`,
-                completedAt: new Date().toISOString(),
-                approvedByName: userName,
-                approvedAt: new Date().toISOString(),
-                status: 'LATE_RESOLVED',
-                reopenReason: reason,
-              }
-            : {
-                ...c,
-                isCompleted: false,
-                status: 'BREACHED',
-                reopenReason: reason,
-              }
-          : c
-      )
-    );
-
-    await resolveLateChecklistAction(itemId, resolution, reason, userEmail, userName, userId);
-    addAuditLog('LATE_CHECKLIST_RESOLUTION', 'CHECKLIST_ITEM', itemId, {
-      resolution,
-      reason,
-      operator: userName,
-    });
-
-    const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.checklists) {
-      setChecklists(wsData.checklists);
-    }
-  };
-
-  const handleResetDailyShift = async () => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') return;
-
-    setChecklists((prev) =>
-      prev.map((c) => ({
-        ...c,
-        isCompleted: false,
-        isApproved: false,
-        completedBy: undefined,
-        completedByName: undefined,
-        completedAt: undefined,
-        approvedBy: undefined,
-        approvedByName: undefined,
-        approvedAt: undefined,
-        reopenedBy: undefined,
-        reopenedByName: undefined,
-        reopenedAt: undefined,
-        reopenReason: undefined,
-        status: 'ACTIVE',
-      }))
-    );
-
-    await resetDailyChecklistsAction();
-    addAuditLog('DAILY_SHIFT_RESET', 'CHECKLISTS', 'ALL', {
-      resetBy: currentUser.fullName,
-      shiftStartCairo: new Date().toLocaleTimeString('en-GB', { timeZone: 'Africa/Cairo' }),
-    });
-
-    const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.checklists) {
-      setChecklists(wsData.checklists);
-    }
-  };
-
-  const handleResolveException = async (id: string) => {
-    setExceptions((prev) =>
-      prev.map((ex) => (ex.id === id ? { ...ex, status: 'RESOLVED', resolvedAt: new Date().toISOString() } : ex))
-    );
-    addAuditLog('RESOLVE_EXCEPTION', 'EXCEPTION_RECORD', id);
-    await resolveExceptionAction(id);
-    const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.exceptions) {
-      setExceptions(wsData.exceptions);
-    }
-  };
-
-  const handleResolveAllExceptions = async () => {
-    setExceptions((prev) =>
-      prev.map((ex) => ({ ...ex, status: 'RESOLVED', resolvedAt: new Date().toISOString() }))
-    );
-    addAuditLog('RESOLVE_ALL_EXCEPTIONS', 'EXCEPTION_RECORD', 'ALL');
-    await resolveAllExceptionsAction();
-    const wsData = await fetchWorkspaceDataAction();
-    if (wsData.success && wsData.exceptions) {
-      setExceptions(wsData.exceptions);
-    }
-  };
-
-  const handleCleanResolvedExceptions = async () => {
-    try {
-      // Optimistically clear resolved exceptions from UI
-      setExceptions((prev) => prev.filter((e) => e.status !== 'RESOLVED'));
-      const res = await cleanResolvedExceptionsAction();
-      if (!res.success) {
-        setProcessingError(formatUserFriendlyError(res.error || 'Failed to clear resolved exceptions.'));
-      }
-      const wsData = await fetchWorkspaceDataAction();
-      if (wsData.success && wsData.exceptions) {
-        setExceptions(wsData.exceptions);
-      }
-      const freshLogs = await fetchAuditLogsAction();
-      setAuditLogs(freshLogs);
-    } catch (err) {
-      setProcessingError(formatUserFriendlyError(err));
-    }
-  };
-
+  // Reference Data Handlers
   const handleAddReferenceData = async (
     item: Omit<ReferenceData, 'id'>
   ): Promise<{ success: boolean; error?: string }> => {
@@ -767,11 +383,11 @@ export default function InvestmentPlatformPage() {
     if (wsData.success && wsData.refData) {
       setReferenceDataList(wsData.refData);
     }
-    const freshLogs = await fetchAuditLogsAction();
-    setAuditLogs(freshLogs);
+    await refreshAuditLogs();
     return { success: true, count: res.count };
   };
 
+  // User Management Handlers
   const handleAddUser = async (newUser: {
     email: string;
     password: string;
@@ -782,7 +398,6 @@ export default function InvestmentPlatformPage() {
     if (!res.success) {
       return { success: false, error: res.error };
     }
-    // Refresh real users list from database
     const wsData = await fetchWorkspaceDataAction();
     if (wsData.success && wsData.users) {
       setUsers(wsData.users);
@@ -798,7 +413,6 @@ export default function InvestmentPlatformPage() {
     if (!res.success) {
       return { success: false, error: res.error };
     }
-    // Refresh real users list from database
     const wsData = await fetchWorkspaceDataAction();
     if (wsData.success && wsData.users) {
       setUsers(wsData.users);
@@ -827,8 +441,8 @@ export default function InvestmentPlatformPage() {
     return <LoginForm onLoginSuccess={setCurrentUser} />;
   }
 
-  const pendingReviewsCount = reviewStatus === 'UNDER_REVIEW' ? 1 : 0;
-  const openExceptionsCount = exceptions.filter((e) => e.status === 'OPEN').length;
+  const pendingReviewsCount = transferWs.reviewStatus === 'UNDER_REVIEW' ? 1 : 0;
+  const openExceptionsCount = exceptionWs.exceptions.filter((e) => e.status === 'OPEN').length;
   const existingHashes = uploadedFiles.map((f) => f.fileHashSha256);
 
   return (
@@ -860,10 +474,10 @@ export default function InvestmentPlatformPage() {
           }
           fetchWorkspaceDataAction().then((wsData) => {
             if (wsData.success) {
-              if (wsData.checklists) setChecklists(wsData.checklists);
+              if (wsData.checklists) checklistWs.setChecklists(wsData.checklists);
               if (wsData.auditLogs) setAuditLogs(wsData.auditLogs);
-              if (wsData.latestBatch) setCurrentTransferBatch(wsData.latestBatch);
-              if (wsData.allBatches) setAllBatches(wsData.allBatches);
+              if (wsData.latestBatch) transferWs.setCurrentTransferBatch(wsData.latestBatch);
+              if (wsData.allBatches) transferWs.setAllBatches(wsData.allBatches);
             }
           });
         }}
@@ -891,8 +505,6 @@ export default function InvestmentPlatformPage() {
             </button>
           </div>
         )}
-
-
 
         {(activeTab === 'orders' || activeTab === 'ingestion') && (
           <div className="space-y-8">
@@ -942,50 +554,56 @@ export default function InvestmentPlatformPage() {
             </div>
 
             <TransferSheetView
-              nettingRows={effectiveNettingRows}
-              totalBuy={effectiveTotalBuy}
-              totalSell={effectiveTotalSell}
-              totalNet={effectiveTotalNet}
+              nettingRows={transferWs.effectiveNettingRows}
+              totalBuy={transferWs.effectiveTotalBuy}
+              totalSell={transferWs.effectiveTotalSell}
+              totalNet={transferWs.effectiveTotalNet}
               currentRole={currentUser.role}
-              reviewStatus={reviewStatus}
-              batch={currentTransferBatch}
-              allBatches={allBatches}
-              onSelectBatch={handleSelectBatch}
-              makerName={makerName}
-              checkerName={checkerName}
-              onMakerSubmit={handleMakerSubmit}
-              onCheckerApprove={handleCheckerApprove}
+              reviewStatus={transferWs.reviewStatus}
+              batch={transferWs.currentTransferBatch}
+              allBatches={transferWs.allBatches}
+              onSelectBatch={transferWs.handleSelectBatch}
+              makerName={transferWs.makerName}
+              checkerName={transferWs.checkerName}
+              onMakerSubmit={transferWs.handleMakerSubmit}
+              onCheckerApprove={transferWs.handleCheckerApprove}
               onNavigateToUpload={() => setActiveTab('orders')}
-              onAdjustLine={handleAdjustTransferLine}
-              onReviewSingleFund={handleReviewSingleFund}
-              onNewBatch={handleNewTransferSheet}
+              onAdjustLine={transferWs.handleAdjustTransferLine}
+              onReviewSingleFund={transferWs.handleReviewSingleFund}
+              onNewBatch={transferWs.handleNewTransferSheet}
             />
           </div>
         )}
 
         {activeTab === 'checklists' && (
           <ChecklistEngine
-            items={checklists}
+            items={checklistWs.checklists}
             currentRole={currentUser.role}
-            onToggleComplete={handleToggleChecklist}
-            onApproveItem={handleApproveChecklist}
-            onResolveLateItem={handleResolveLateChecklist}
-            onResetDailyShift={handleResetDailyShift}
-            onReopenItem={handleReopenChecklist}
+            onToggleComplete={checklistWs.handleToggleChecklist}
+            onApproveItem={checklistWs.handleApproveChecklist}
+            onResolveLateItem={checklistWs.handleResolveLateChecklist}
+            onResetDailyShift={checklistWs.handleResetDailyShift}
+            onReopenItem={checklistWs.handleReopenChecklist}
           />
         )}
 
         {activeTab === 'exceptions' && (
           <ExceptionCenter
-            exceptions={exceptions}
-            onResolveException={handleResolveException}
-            onResolveAllExceptions={handleResolveAllExceptions}
-            onCleanResolvedExceptions={handleCleanResolvedExceptions}
+            exceptions={exceptionWs.exceptions}
+            onResolveException={exceptionWs.handleResolveException}
+            onResolveAllExceptions={exceptionWs.handleResolveAllExceptions}
+            onCleanResolvedExceptions={exceptionWs.handleCleanResolvedExceptions}
           />
         )}
 
         {activeTab === 'audit' && (
-          <AuditTrailViewer logs={auditLogs} uploadedFiles={uploadedFiles} />
+          <AuditTrailViewer
+            logs={auditLogs}
+            uploadedFiles={uploadedFiles}
+            onLoadMore={handleLoadMoreAuditLogs}
+            hasMore={auditHasMore}
+            isLoadingMore={isLoadingMoreAuditLogs}
+          />
         )}
 
         {activeTab === 'admin' && currentUser.role === 'SUPER_ADMIN' && (
@@ -1008,15 +626,15 @@ export default function InvestmentPlatformPage() {
         )}
       </main>
 
-      {/* Operational Cycle Reminder Snackbar (e.g. Day 18, Thursdays, Wednesdays, Mondays) */}
+      {/* Operational Cycle Reminder Snackbar */}
       <ScheduleReminderSnackbar referenceDataList={referenceDataList} />
 
       {/* Four-Eyes Principle Enforcement Alert Snackbar */}
       <FourEyesAlertSnackbar
-        isOpen={Boolean(fourEyesError)}
-        onClose={() => setFourEyesError(null)}
-        makerName={fourEyesError?.makerName}
-        message={fourEyesError?.message}
+        isOpen={Boolean(transferWs.fourEyesError)}
+        onClose={() => transferWs.setFourEyesError(null)}
+        makerName={transferWs.fourEyesError?.makerName}
+        message={transferWs.fourEyesError?.message}
       />
     </div>
   );

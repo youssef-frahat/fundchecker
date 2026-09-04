@@ -3,6 +3,7 @@
 
 import { getDbClient } from '../db-client';
 import { AdjustmentCategory, TransferLineAdjustment, TransferSheetBatch, TransferSheetLine } from '../types';
+import { calculateFinalTransfer } from '../services/financialMath';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -325,7 +326,7 @@ export async function recordTransferLineAdjustment(
       system_net_snapshot: systemNetSnapshot,
       old_adjustment_amount: oldAdjustmentAmount,
       new_adjustment_amount: newAdjustmentAmount,
-      resulting_final_transfer: systemNetSnapshot + newAdjustmentAmount,
+      resulting_final_transfer: calculateFinalTransfer(systemNetSnapshot, newAdjustmentAmount),
       adjustment_category: adjustmentCategory,
       reason,
       user_id: userId,

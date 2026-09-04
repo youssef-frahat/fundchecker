@@ -26,11 +26,20 @@ import { HistoricalFileViewerModal } from './HistoricalFileViewerModal';
 interface AuditTrailViewerProps {
   logs: AuditLog[];
   uploadedFiles?: UploadedFileRecord[];
+  onLoadMore?: () => void | Promise<void>;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
 }
 
 type AuditCategory = 'ALL' | 'CHECKLIST' | 'TRANSFER' | 'FILE' | 'USER';
 
-export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerProps) {
+export function AuditTrailViewer({
+  logs,
+  uploadedFiles = [],
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
+}: AuditTrailViewerProps) {
   const [activeAuditView, setActiveAuditView] = useState<'LOGS' | 'FILES'>('LOGS');
   const [inspectingFile, setInspectingFile] = useState<UploadedFileRecord | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -633,6 +642,30 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
           </tbody>
         </table>
       </div>
+
+      {onLoadMore && (
+        <div className="flex items-center justify-between p-4 bg-slate-50 border border-t-0 border-slate-200 rounded-b-xl">
+          <p className="text-xs text-slate-500 font-mono">
+            Showing {filteredLogs.length} records{hasMore ? ' (more records available on server)' : ' (all records loaded)'}
+          </p>
+          {hasMore && (
+            <button
+              onClick={() => onLoadMore()}
+              disabled={isLoadingMore}
+              className="px-4 py-1.5 text-xs font-semibold text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-50 active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isLoadingMore ? (
+                <>
+                  <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                'Load More Audit Logs'
+              )}
+            </button>
+          )}
+        </div>
+      )}
         </>
       )}
 

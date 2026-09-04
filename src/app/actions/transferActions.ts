@@ -17,6 +17,7 @@ import {
 import { insertUploadedFileRecord } from '@/lib/repositories/tradeRepository';
 import { insertAuditLog } from '@/lib/repositories/auditRepository';
 import { insertExceptionsBatch } from '@/lib/repositories/exceptionRepository';
+import { calculateFinalTransfer, subFinancial } from '@/lib/services/financialMath';
 
 export async function getLatestTransferBatchAction(): Promise<TransferSheetBatch | null> {
   try {
@@ -214,11 +215,11 @@ export async function adjustTransferLineAction(
       oldValues: { adjustmentAmount: oldAdjustmentAmount },
       newValues: {
         adjustmentAmount: newAdjustmentAmount,
-        delta: newAdjustmentAmount - oldAdjustmentAmount,
+        delta: subFinancial(newAdjustmentAmount, oldAdjustmentAmount),
         adjustmentCategory,
         reason: reason.trim(),
         symbolCode,
-        resultingFinalTransfer: systemNetSnapshot + newAdjustmentAmount,
+        resultingFinalTransfer: calculateFinalTransfer(systemNetSnapshot, newAdjustmentAmount),
       },
     });
 

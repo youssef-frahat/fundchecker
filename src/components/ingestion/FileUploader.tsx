@@ -38,6 +38,7 @@ export function FileUploader({
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [parseProgress, setParseProgress] = useState<{ processed: number; total: number } | null>(null);
   const [duplicateModal, setDuplicateModal] = useState<{
     file: File;
     hash: string;
@@ -70,7 +71,10 @@ export function FileUploader({
 
   const executeFileParsing = async (file: File, hash: string) => {
     try {
-      const parsedRows = await parseTradingExcel(file);
+      setParseProgress({ processed: 0, total: 1 });
+      const parsedRows = await parseTradingExcel(file, (processed, total) => {
+        setParseProgress({ processed, total });
+      });
       if (parsedRows.length === 0) {
         throw new Error('No valid trading transactions found in uploaded Excel file.');
       }
@@ -93,6 +97,7 @@ export function FileUploader({
       setErrorMessage(formatUserFriendlyError(err));
     } finally {
       setIsProcessing(false);
+      setParseProgress(null);
     }
   };
 
@@ -235,6 +240,23 @@ export function FileUploader({
                 : 'Supports 39-column raw trading format generating 11-column fund reports.'}
             </p>
           </div>
+
+          {isProcessing && parseProgress && (
+            <div className="w-full space-y-1.5 pt-2">
+              <div className="flex items-center justify-between text-xs text-slate-600 font-mono">
+                <span>Processing Rows...</span>
+                <span>{parseProgress.processed} / {parseProgress.total}</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-emerald-600 h-2 rounded-full transition-all duration-150"
+                  style={{
+                    width: `${Math.min(100, Math.round((parseProgress.processed / Math.max(1, parseProgress.total)) * 100))}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex items-center justify-center gap-3 pt-2">

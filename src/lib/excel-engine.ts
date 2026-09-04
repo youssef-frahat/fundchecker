@@ -9,7 +9,6 @@ import {
   SettlementType,
   TransferSheetLine,
 } from './types';
-import { formatFinancialNumber } from './netting-engine';
 
 /**
  * Computes SHA-256 hash of a file array buffer for duplicate upload detection.
@@ -52,8 +51,12 @@ function extractNumericValue(cell: ExcelJS.Cell): number {
 /**
  * Parses raw trading Excel file into RawTransactionRow objects.
  * Intelligently scans the first 10 rows to detect the exact header row.
+ * Supports cooperative multitasking and progress reporting for large workbooks.
  */
-export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]> {
+export async function parseTradingExcel(
+  file: File,
+  onProgress?: (processedRows: number, totalRows: number) => void
+): Promise<RawTransactionRow[]> {
   const buffer = await file.arrayBuffer();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
@@ -209,11 +212,18 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
 
   const rows: RawTransactionRow[] = [];
   const fileId = `file-${Date.now()}`;
+  const totalRows = worksheet.rowCount;
+  const startRow = (foundHeaders ? headerRowNumber : 0) + 1;
 
-  worksheet.eachRow((row, rowNumber) => {
-    // Skip header row and any preceding title rows
-    if (foundHeaders && rowNumber <= headerRowNumber) return;
-    if (!foundHeaders && rowNumber === 1) return;
+  for (let rowNumber = startRow; rowNumber <= totalRows; rowNumber++) {
+    // Cooperative multitasking: yield to event loop every 500 rows to prevent UI freezing
+    if ((rowNumber - startRow) % 500 === 0 && rowNumber > startRow) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      onProgress?.(rowNumber - startRow, Math.max(1, totalRows - startRow));
+    }
+
+    const row = worksheet.getRow(rowNumber);
+    if (!row || !row.hasValues) continue;
 
     const requestId = extractCellValue(row.getCell(colRequestId)) || '';
     const mubasherNo = extractCellValue(row.getCell(colMubasherNo));
@@ -236,7 +246,7 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
 
     // Ignore header re-occurrences or total rows
     if (effectiveSymbol.toLowerCase().includes('symbol') || customerName.toLowerCase().includes('total')) {
-      return;
+      continue;
     }
 
     let orderSide = rawOrderSide.toUpperCase();
@@ -272,8 +282,9 @@ export async function parseTradingExcel(file: File): Promise<RawTransactionRow[]
         orderDate: orderDateRaw || new Date().toISOString(),
       });
     }
-  });
+  }
 
+  onProgress?.(Math.max(0, totalRows - startRow), Math.max(1, totalRows - startRow));
 
   return rows;
 }
