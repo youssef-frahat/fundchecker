@@ -344,7 +344,13 @@ export async function upsertReferenceDataBatchInDb(
   if (existingRefs) {
     for (const r of existingRefs) {
       if (r.symbol_code) {
-        existingMap.set(String(r.symbol_code).trim().toLowerCase(), r as any);
+        existingMap.set(String(r.symbol_code).trim().toLowerCase(), {
+          symbol_code: String(r.symbol_code),
+          fund_type: String(r.fund_type || 'T0'),
+          nav_unit_price: Number(r.nav_unit_price) || 0,
+          email_contact: r.email_contact ? String(r.email_contact) : null,
+          status: String(r.status || 'ACTIVE'),
+        });
       }
     }
   }
@@ -406,11 +412,11 @@ export async function upsertReferenceDataBatchInDb(
 
       if (existing && existing.length > 0) {
         const existingRow = existing[0];
-        const updatePayload: Record<string, any> = {};
+        const updatePayload: Record<string, string> = {};
 
-        if (hasFundType) updatePayload.fund_type = item.fundType;
-        if (hasFrequency) updatePayload.frequency = item.scheduleFrequency;
-        if (hasInstruction) updatePayload.raw_instruction = item.executionInstruction;
+        if (item.fundType) updatePayload.fund_type = item.fundType;
+        if (item.scheduleFrequency) updatePayload.frequency = item.scheduleFrequency;
+        if (item.executionInstruction) updatePayload.raw_instruction = item.executionInstruction;
         if (item.status) updatePayload.status = item.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
 
         if (Object.keys(updatePayload).length > 0) {
