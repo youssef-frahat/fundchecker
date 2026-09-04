@@ -346,7 +346,7 @@ export function UserManagementAdmin({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Temporary Password (كلمة المرور) *</label>
+                <label className="block text-slate-700 font-semibold mb-1">Temporary Password *</label>
                 <input
                   type="password"
                   required
@@ -359,7 +359,7 @@ export function UserManagementAdmin({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Assigned Role (الدور الوظيفي) *</label>
+                <label className="block text-slate-700 font-semibold mb-1">Assigned Role *</label>
                 <select
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value as UserRole)}

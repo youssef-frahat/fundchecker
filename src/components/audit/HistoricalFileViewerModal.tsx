@@ -24,7 +24,7 @@ export function HistoricalFileViewerModal({ fileRecord, onClose }: HistoricalFil
     async function loadData() {
       setLoading(true);
       setError(null);
-      const res = await fetchHistoricalFileRowsAction(fileRecord.id);
+      const res = await fetchHistoricalFileRowsAction(fileRecord.id, fileRecord.fileHashSha256, fileRecord.fileName);
       if (!isMounted) return;
       if (!res.success) {
         setError(res.error || 'Failed to load historical sheet records.');
@@ -312,15 +312,15 @@ export function HistoricalFileViewerModal({ fileRecord, onClose }: HistoricalFil
                     <tr>
                       <td colSpan={10} className="p-8 text-center">
                         {fileRecord.status === 'FAILED' ? (
-                          <div className="max-w-md mx-auto py-4 space-y-3 font-sans" dir="rtl">
+                          <div className="max-w-md mx-auto py-4 space-y-3 font-sans" dir="ltr">
                             <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto border border-rose-200">
                               <AlertTriangle className="w-6 h-6" />
                             </div>
                             <h4 className="font-bold text-slate-900 text-sm">
-                              حالة المعالجة: لم تكتمل معالجة هذا الملف (Processing Failed)
+                              Ingestion Status: File Processing Incomplete (Failed)
                             </h4>
                             <p className="text-xs text-slate-600 leading-relaxed">
-                              تم تسجيل محاولة رفع الملف والهاش الرقمي الخاص به في الأرشيف، ولكن حدث تراجع أمان (Rollback) أثناء محاولة الرفع السابقة لحماية اتساق البيانات، ولذلك لا توجد صفوف غير مؤكدة مخزنة.
+                              File ingestion attempt and cryptographic hash were cataloged in the archive. An automated security rollback occurred during processing to maintain ledger integrity; no uncommitted rows remain stored.
                             </p>
                             <div className="pt-1">
                               <button
@@ -328,7 +328,7 @@ export function HistoricalFileViewerModal({ fileRecord, onClose }: HistoricalFil
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs"
                               >
                                 <Download className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>تحميل تقرير فحص الملف الرقمي (.txt)</span>
+                                <span>Download Ingestion Diagnostic (.txt)</span>
                               </button>
                             </div>
                           </div>

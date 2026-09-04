@@ -258,12 +258,12 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
               <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
                 <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <input
-                  type="date"
-                  lang="en-US"
+                  type="text"
+                  placeholder="YYYY-MM-DD"
                   dir="ltr"
                   value={fileSelectedDate}
                   onChange={(e) => setFileSelectedDate(e.target.value)}
-                  className="font-mono text-slate-900 font-bold focus:outline-none bg-transparent cursor-pointer text-xs"
+                  className="font-mono text-slate-900 font-bold focus:outline-none bg-transparent text-xs w-24"
                 />
               </div>
 
@@ -477,12 +477,12 @@ export function AuditTrailViewer({ logs, uploadedFiles = [] }: AuditTrailViewerP
           <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-2xs">
             <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             <input
-              type="date"
-              lang="en-US"
+              type="text"
+              placeholder="YYYY-MM-DD"
               dir="ltr"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="font-mono text-slate-900 font-bold focus:outline-none bg-transparent cursor-pointer text-xs"
+              className="font-mono text-slate-900 font-bold focus:outline-none bg-transparent text-xs w-24"
             />
           </div>
 

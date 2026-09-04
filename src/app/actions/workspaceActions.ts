@@ -186,7 +186,11 @@ export async function fetchAuditLogsAction(limit: number = 200) {
   return await fetchAuditLogs(limit);
 }
 
-export async function fetchHistoricalFileRowsAction(fileId: string): Promise<{
+export async function fetchHistoricalFileRowsAction(
+  fileId: string,
+  fileHash?: string,
+  fileName?: string
+): Promise<{
   success: boolean;
   fileRecord?: import('@/lib/types').UploadedFileRecord;
   rows?: import('@/lib/types').RawTransactionRow[];
@@ -198,14 +202,38 @@ export async function fetchHistoricalFileRowsAction(fileId: string): Promise<{
     const { getDbClient } = await import('@/lib/db-client');
     const supabase = await getDbClient();
 
-    // 1. Fetch file record
-    const { data: file, error: fileErr } = await supabase
-      .from('uploaded_files')
-      .select('*')
-      .eq('id', fileId)
-      .single();
+    // 1. Fetch file record by UUID, Hash, or FileName
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let file = null;
 
-    if (fileErr || !file) {
+    if (fileId && UUID_REGEX.test(fileId)) {
+      const { data } = await supabase.from('uploaded_files').select('*').eq('id', fileId).maybeSingle();
+      file = data;
+    }
+
+    if (!file && fileHash) {
+      const { data } = await supabase
+        .from('uploaded_files')
+        .select('*')
+        .eq('file_hash_sha256', fileHash)
+        .order('uploaded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      file = data;
+    }
+
+    if (!file && fileName) {
+      const { data } = await supabase
+        .from('uploaded_files')
+        .select('*')
+        .eq('file_name', fileName)
+        .order('uploaded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      file = data;
+    }
+
+    if (!file) {
       return { success: false, error: 'File record not found in database.' };
     }
 
@@ -224,11 +252,21 @@ export async function fetchHistoricalFileRowsAction(fileId: string): Promise<{
 
     if (fileRecord.fileCategory === 'ALLOCATION') {
       // Fetch corresponding batch and lines
-      const { data: batch } = await supabase
+      let { data: batch } = await supabase
         .from('transfer_sheet_batches')
         .select('id')
-        .eq('allocation_file_id', fileId)
+        .eq('allocation_file_id', file.id)
         .maybeSingle();
+
+      if (!batch) {
+        const { data: latestB } = await supabase
+          .from('transfer_sheet_batches')
+          .select('id')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        batch = latestB;
+      }
 
       if (batch?.id) {
         const { data: dbLines } = await supabase
@@ -262,7 +300,7 @@ export async function fetchHistoricalFileRowsAction(fileId: string): Promise<{
     const { data: txs, error: txErr } = await supabase
       .from('transactions')
       .select('*')
-      .eq('file_id', fileId)
+      .eq('file_id', file.id)
       .order('created_at', { ascending: true });
 
     if (txErr) {

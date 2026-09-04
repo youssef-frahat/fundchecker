@@ -33,6 +33,7 @@ export async function uploadAllocationFileAction(
   rawRows: RawTransactionRow[]
 ): Promise<{
   success: boolean;
+  fileId?: string;
   batch?: TransferSheetBatch;
   importedCount?: number;
   rejectedCount?: number;
@@ -113,6 +114,7 @@ export async function uploadAllocationFileAction(
 
     return {
       success: true,
+      fileId,
       batch: persistedBatch || {
         ...calculation.batch,
         id: batchId,

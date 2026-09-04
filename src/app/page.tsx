@@ -171,6 +171,16 @@ export default function InvestmentPlatformPage() {
         setProcessingError(allocResult.error || 'Allocation processing encountered a failure.');
         return;
       }
+      if (allocResult.fileId) {
+        setUploadedFiles((prev) => [
+          { ...fileRecord, id: allocResult.fileId!, fileCategory: category },
+          ...prev.filter((f) => f.id !== fileRecord.id),
+        ]);
+      }
+      const wsData = await fetchWorkspaceDataAction();
+      if (wsData.success && wsData.uploadedFiles) {
+        setUploadedFiles(wsData.uploadedFiles);
+      }
       setCurrentTransferBatch(allocResult.batch);
       const freshLogs = await fetchAuditLogsAction();
       setAuditLogs(freshLogs);
@@ -202,6 +212,11 @@ export default function InvestmentPlatformPage() {
     // Refresh exceptions and audit logs from database execution report
     if (report.exceptions.length > 0) {
       setExceptions((prev) => [...report.exceptions, ...prev]);
+    }
+
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.uploadedFiles) {
+      setUploadedFiles(wsData.uploadedFiles);
     }
 
     // Refresh audit logs from DB

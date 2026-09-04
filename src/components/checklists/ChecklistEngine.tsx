@@ -109,23 +109,23 @@ export function ChecklistEngine({
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <h3 className="font-bold text-lg text-slate-900">
-              دورة التشغيل اليومية للصناديق والاعتماد الرقمي (Daily Fund Operational Checklists)
+              Daily Fund Operational Checklists &amp; Digital Sign-off
             </h3>
           </div>
           <p className="text-xs text-slate-600 mt-1">
-            المنفذ ينفذ المهام حتى الديدلاين. بعد الديدلاين تُقفل للمنفذين وتتطلب تدخلاً استثنائياً من السوبر أدمن. تبدأ دورة اليوم تلقائياً 6:00 صباحاً.
+            Operators execute compliance items prior to cutoffs. Overdue items lock automatically and require Super Admin override. Daily shift cycle resets at 06:00 AM Cairo.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           <div className="text-xs font-mono text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
-            <span>المنجز: </span>
+            <span>Completed: </span>
             <span className="text-emerald-700 font-bold">
               {completedCount} / {items.length}
             </span>
           </div>
           <div className="text-xs font-mono text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-            <span>المعتمد نهائياً: </span>
+            <span>Approved &amp; Locked: </span>
             <span className="font-bold text-emerald-700">
               {approvedCount} / {items.length}
             </span>
@@ -136,10 +136,10 @@ export function ChecklistEngine({
             <button
               onClick={() => setShowResetConfirmModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition shadow-2xs"
-              title="تصفير الشيك ليست وبدء يوم تشغيلي جديد"
+              title="Reset checklists for new operational business day"
             >
               <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
-              <span>بدء وردية جديدة</span>
+              <span>Start New Shift</span>
             </button>
           )}
         </div>
@@ -149,7 +149,7 @@ export function ChecklistEngine({
       <div className="space-y-3.5">
         {items.length === 0 ? (
           <div className="p-8 text-center border border-dashed border-slate-300 rounded-xl text-slate-500 text-xs">
-            لا توجد خطوات مسجلة. جاري تحميل خطوات التشغيل من قاعدة البيانات...
+            No checklist items found. Loading operational workflows from database...
           </div>
         ) : (
           items.map((item) => {
@@ -186,14 +186,14 @@ export function ChecklistEngine({
                       }}
                       title={
                         item.isApproved
-                          ? 'مقفل نهائياً بعد اعتماد السوبر أدمن'
+                          ? 'Finalized and locked post Super Admin sign-off'
                           : isMissedDeadline
                           ? currentRole === 'SUPER_ADMIN'
-                            ? 'انقر لفتح نافذة المعالجة الاستثنائية وكتابة السبب الإلزامي'
-                            : '🔒 مقفل لتجاوز موعد الديدلاين للمنفذين'
+                            ? 'Click to open late resolution override and submit mandatory justification'
+                            : '🔒 Locked: Cutoff deadline elapsed for operators'
                           : item.isCompleted
-                          ? 'انقر هنا للتراجع عن علامة الصح (Undo)'
-                          : 'انقر للتأكيد والتنفيذ'
+                          ? 'Click to undo completion mark'
+                          : 'Click to confirm and execute task'
                       }
                       className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all shrink-0 mt-0.5 ${
                         item.isApproved
@@ -242,13 +242,13 @@ export function ChecklistEngine({
                           }`}
                         >
                           <Clock className="w-3 h-3" />
-                          الديدلاين: {item.dueTime}
+                          Deadline: {item.dueTime}
                         </span>
 
                         {/* Priority Badge */}
                         {item.priority === 'CRITICAL' && (
                           <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.2 rounded uppercase">
-                            هام وحرج
+                            CRITICAL / MANDATORY
                           </span>
                         )}
 
@@ -256,7 +256,7 @@ export function ChecklistEngine({
                         {isMissedDeadline && (
                           <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 text-rose-600" />
-                            تجاوز موعد التنفيذ - غير مكتمل!
+                            OVERDUE - INCOMPLETE!
                           </span>
                         )}
 
@@ -264,32 +264,31 @@ export function ChecklistEngine({
                         {item.status === 'LATE_RESOLVED' && (
                           <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 text-amber-600" />
-                            معالجة متأخرة معتمدة (Late Override)
+                            Late Override Approved
                           </span>
                         )}
                         {item.status === 'BREACHED' && (
                           <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 text-white" />
-                            مخالفة عدم تنفيذ مسجلة (Breached)
+                            Operational Breach Logged
                           </span>
                         )}
 
                         {/* Standard Status Badges */}
                         {item.isApproved ? (
                           <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
-                            <Lock className="w-3 h-3 text-emerald-700" /> معتمد ومقفل نهائياً
+                            <Lock className="w-3 h-3 text-emerald-700" /> Approved &amp; Locked
                           </span>
                         ) : item.isCompleted ? (
                           <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-semibold px-2 py-0.5 rounded flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-amber-700" /> تم التنفيذ - بانتظار اعتماد السوبر أدمن
+                            <Clock className="w-3 h-3 text-amber-700" /> Completed - Pending Super Admin Sign-off
                           </span>
                         ) : null}
                       </div>
 
-                      {/* Description (Arabic Operational Explanation) */}
+                      {/* Description (Operational Explanation) */}
                       {item.description && (
                         <div
-                          dir="rtl"
                           className={`mt-2 text-xs leading-relaxed p-2 rounded-lg border ${
                             isMissedDeadline
                               ? 'bg-rose-50/80 border-rose-200 text-rose-800 font-medium'
@@ -298,7 +297,7 @@ export function ChecklistEngine({
                               : 'bg-slate-50/80 border-slate-200/80 text-slate-700'
                           }`}
                         >
-                          <span className="font-bold text-slate-900 ml-1">الوصف التشغيلي:</span>
+                          <span className="font-bold text-slate-900 mr-1">Operational Description:</span>
                           <span>{item.description}</span>
                         </div>
                       )}
@@ -307,7 +306,7 @@ export function ChecklistEngine({
                       {isMissedDeadline && !item.isCompleted && currentRole !== 'SUPER_ADMIN' && (
                         <div className="mt-2 text-[11px] text-rose-800 bg-rose-100/70 border border-rose-300 p-2 rounded-lg font-mono flex items-center gap-2">
                           <Lock className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                          <span>انتهت المهلة المحددة للمنفذين. تم قفل المهمة ولا يمكن التأكيد إلا بتدخل استثنائي من السوبر أدمن.</span>
+                          <span>Cutoff deadline has elapsed. Task is locked for operators and requires Super Admin intervention.</span>
                         </div>
                       )}
 
@@ -316,7 +315,7 @@ export function ChecklistEngine({
                         <div className="mt-2 text-[11px] text-rose-950 bg-rose-100/80 border border-rose-300 p-2.5 rounded-lg font-mono flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                            <span>تجاوزت هذه المهمة موعد الديدلاين ({item.dueTime}). مربع التأكيد المباشر مقفل، ويجب الضغط على زر &quot;معالجة استثنائية&quot; لكتابة المبرر التشغيلي الإلزامي.</span>
+                            <span>Task has exceeded its cutoff deadline ({item.dueTime}). Direct checkbox confirmation is locked; click &quot;Late Override&quot; to submit mandatory audit justification.</span>
                           </div>
                         </div>
                       )}
@@ -333,9 +332,9 @@ export function ChecklistEngine({
                           {/* Operator Signature */}
                           <span className="flex items-center gap-1.5 font-bold">
                             <UserCheck className="w-3.5 h-3.5 text-emerald-700" />
-                            <span>نفّذ بواسطة:</span>
+                            <span>Executed by:</span>
                             <span className="underline decoration-emerald-500">
-                              {item.completedByName || 'المنفذ'}
+                              {item.completedByName || 'Operator'}
                             </span>
                             <span className="text-slate-500 font-normal">
                               ({formatCairoDate(item.completedAt)})
@@ -346,9 +345,9 @@ export function ChecklistEngine({
                           {item.isApproved && (
                             <span className="flex items-center gap-1.5 font-bold text-emerald-900">
                               <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                              <span>اعتمد وقفل بواسطة (Super Admin):</span>
+                              <span>Approved &amp; Locked by (Super Admin):</span>
                               <span className="underline decoration-emerald-700">
-                                {item.approvedByName || 'سوبر أدمن'}
+                                {item.approvedByName || 'Super Admin'}
                               </span>
                               <span className="text-slate-500 font-normal">
                                 ({formatCairoDate(item.approvedAt)})
@@ -359,7 +358,7 @@ export function ChecklistEngine({
                           {/* Undo Notice for Operator */}
                           {!item.isApproved && (
                             <span className="text-[10px] text-slate-500 italic">
-                              (يمكنك الضغط على المربع للتراجع عن التنفيذ قبل اعتماد السوبر أدمن)
+                              (Click checkbox to undo completion before Super Admin sign-off)
                             </span>
                           )}
                         </div>
@@ -369,10 +368,10 @@ export function ChecklistEngine({
                       {item.reopenedByName && !item.isApproved && (
                         <div className="mt-2 text-[11px] text-amber-900 bg-amber-50 border border-amber-200 p-2 rounded-lg font-mono">
                           <p>
-                            <span className="font-bold text-amber-800">أعيد فتحه بواسطة الإدارة:</span>{' '}
-                            {item.reopenedByName} في {formatCairoDate(item.reopenedAt)}
+                            <span className="font-bold text-amber-800">Reopened by Management:</span>{' '}
+                            {item.reopenedByName} at {formatCairoDate(item.reopenedAt)}
                           </p>
-                          <p className="text-slate-600 mt-0.5">سبب إعادة الفتح: &quot;{item.reopenReason}&quot;</p>
+                          <p className="text-slate-600 mt-0.5">Reopen Reason: &quot;{item.reopenReason}&quot;</p>
                         </div>
                       )}
                     </div>
@@ -385,10 +384,10 @@ export function ChecklistEngine({
                       <button
                         onClick={() => setLateResolutionModal(item)}
                         className="bg-rose-600 hover:bg-rose-700 text-white shadow-xs px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0"
-                        title="معالجة استثنائية بعد تجاوز الديدلاين"
+                        title="Super Admin exception resolution for overdue task"
                       >
                         <AlertTriangle className="w-3.5 h-3.5" />
-                        <span>معالجة استثنائية</span>
+                        <span>Late Override</span>
                       </button>
                     )}
 
@@ -397,10 +396,10 @@ export function ChecklistEngine({
                       <button
                         onClick={() => onApproveItem(item.id)}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-                        title="اعتماد وقفل المهمة نهائياً لمنع أي تعديل"
+                        title="Approve and lock task permanently against modification"
                       >
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>اعتماد وقفل نهائي</span>
+                        <span>Approve &amp; Lock</span>
                       </button>
                     )}
 
@@ -409,10 +408,10 @@ export function ChecklistEngine({
                       <button
                         onClick={() => onToggleComplete(item.id, false)}
                         className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-2.5 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1"
-                        title="تراجع عن علامة الصح"
+                        title="Undo completion mark"
                       >
                         <RotateCcw className="w-3 h-3" />
-                        <span>تراجع</span>
+                        <span>Undo</span>
                       </button>
                     )}
 
@@ -421,10 +420,10 @@ export function ChecklistEngine({
                       <button
                         onClick={() => setReopenModal(item)}
                         className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1"
-                        title="إعادة فتح المهمة المقفلة لسبب طارئ"
+                        title="Reopen locked task for audited emergency adjustment"
                       >
                         <Unlock className="w-3.5 h-3.5" />
-                        <span>إعادة فتح</span>
+                        <span>Reopen</span>
                       </button>
                     )}
                   </div>
@@ -444,17 +443,17 @@ export function ChecklistEngine({
                 <AlertTriangle className="w-6 h-6 text-rose-600" />
               </div>
               <div>
-                <h4 className="font-bold text-base text-slate-900">معالجة استثنائية بعد الديدلاين (Super Admin)</h4>
-                <p className="text-xs text-rose-600">موعد الإقفال: {lateResolutionModal.dueTime}</p>
+                <h4 className="font-bold text-base text-slate-900">Super Admin Late Resolution Override</h4>
+                <p className="text-xs text-rose-600">Cutoff Deadline: {lateResolutionModal.dueTime}</p>
               </div>
             </div>
 
             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800">
-              المهمة: &quot;{lateResolutionModal.title}&quot;
+              Task: &quot;{lateResolutionModal.title}&quot;
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700">نوع الإجراء الرقابي:</label>
+              <label className="text-xs font-bold text-slate-700">Regulatory Action Type:</label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -465,7 +464,7 @@ export function ChecklistEngine({
                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  ✅ تم الحل والتنفيذ
+                  ✅ Resolve &amp; Execute
                 </button>
                 <button
                   type="button"
@@ -476,16 +475,16 @@ export function ChecklistEngine({
                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  ❌ تسجيل مخالفة عدم تنفيذ
+                  ❌ Record Breach
                 </button>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">سبب التأخير أو مبرر التجاوز (إلزامي للأوديت):</label>
+              <label className="text-xs font-bold text-slate-700">Overdue Justification (Mandatory for Audit Trail):</label>
               <textarea
                 rows={3}
-                placeholder="اكتب التبرير التشغيلي أو سبب عدم التنفيذ في الموعد المحدد..."
+                placeholder="State the operational cause or impediment for exceeding the cutoff deadline..."
                 value={lateResolutionReason}
                 onChange={(e) => setLateResolutionReason(e.target.value)}
                 className="w-full bg-white border border-slate-300 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:border-rose-600"
@@ -495,16 +494,16 @@ export function ChecklistEngine({
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 onClick={() => setLateResolutionModal(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 cursor-pointer"
               >
-                إلغاء
+                Cancel
               </button>
               <button
                 disabled={!lateResolutionReason.trim()}
                 onClick={handleConfirmLateResolution}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-50 shadow-md shadow-rose-600/20"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-50 shadow-md shadow-rose-600/20 cursor-pointer"
               >
-                تأكيد المعالجة وتوثيق الأوديت
+                Confirm Resolution &amp; Record Audit
               </button>
             </div>
           </div>
@@ -520,28 +519,28 @@ export function ChecklistEngine({
                 <RotateCcw className="w-6 h-6 text-slate-700" />
               </div>
               <div>
-                <h4 className="font-bold text-base text-slate-900">بدء وردية عمل جديدة (Shift Reset)</h4>
-                <p className="text-xs text-slate-600">تصفير الشيك ليست لليوم التشغيلي الجديد</p>
+                <h4 className="font-bold text-base text-slate-900">Start New Operational Shift</h4>
+                <p className="text-xs text-slate-600">Reset checklists for new operational business day</p>
               </div>
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              هل أنت متأكد من تصفير حالة المهام لجميع الصناديق وبدء وردية عمل جديدة؟
-              سيتم حفظ جميع الحركات والتوقيعات السابقة في سجل الأوديت بالكامل.
+              Are you sure you want to reset the checklist status for all funds and begin a new operational shift?
+              All previous execution logs and digital signatures remain permanently preserved in the immutable audit trail.
             </p>
 
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 onClick={() => setShowResetConfirmModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 cursor-pointer"
               >
-                إلغاء
+                Cancel
               </button>
               <button
                 onClick={handleConfirmResetDailyShift}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-900/20"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-900/20 cursor-pointer"
               >
-                تأكيد بدء الوردية الجديدة
+                Confirm Shift Reset
               </button>
             </div>
           </div>
@@ -557,18 +556,18 @@ export function ChecklistEngine({
                 <Unlock className="w-6 h-6 text-amber-600" />
               </div>
               <div>
-                <h4 className="font-bold text-base text-slate-900">إعادة فتح مهمة مقفلة (Super Admin)</h4>
-                <p className="text-xs text-amber-700">يتطلب كتابة سبب واضح وموثق في سجل الأوديت</p>
+                <h4 className="font-bold text-base text-slate-900">Reopen Finalized Task (Super Admin)</h4>
+                <p className="text-xs text-amber-700">Requires audited justification documented in regulatory trail</p>
               </div>
             </div>
 
             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800">
-              المهمة: &quot;{reopenModal.title}&quot;
+              Task: &quot;{reopenModal.title}&quot;
             </div>
 
             <textarea
               rows={3}
-              placeholder="اكتب سبب إعادة فتح المهمة المقفلة للمطابقة والرقابة..."
+              placeholder="State the operational reason for reopening this locked task for reconciliation..."
               value={reopenReason}
               onChange={(e) => setReopenReason(e.target.value)}
               className="w-full bg-white border border-slate-300 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:border-amber-600"
@@ -577,16 +576,16 @@ export function ChecklistEngine({
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 onClick={() => setReopenModal(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 cursor-pointer"
               >
-                إلغاء
+                Cancel
               </button>
               <button
                 disabled={!reopenReason.trim()}
                 onClick={handleConfirmReopen}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 shadow-md shadow-amber-600/20"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 shadow-md shadow-amber-600/20 cursor-pointer"
               >
-                تأكيد إعادة الفتح وتوثيق الحركة
+                Confirm Reopen &amp; Record Audit
               </button>
             </div>
           </div>

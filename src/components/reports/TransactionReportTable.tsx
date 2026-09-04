@@ -210,7 +210,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
               className="bg-white border border-slate-300 px-3 py-2 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-emerald-600 w-56 shadow-2xs"
             />
 
-            {/* Complete Data Toggle (بيانات كاملة) */}
+            {/* Complete Data Toggle */}
             <button
               onClick={() => setShowCompleteData(!showCompleteData)}
               className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border ${
@@ -221,7 +221,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
               title="Toggle between Egyptian Market Settlement Rules and Full Complete Data"
             >
               <Check className={`w-3.5 h-3.5 ${showCompleteData ? 'text-white' : 'text-slate-400'}`} />
-              <span>{showCompleteData ? 'Full Data (بيانات كاملة)' : 'Standard Rules (T0/T1)'}</span>
+              <span>{showCompleteData ? 'Full Data Mode' : 'Standard Rules (T0/T1)'}</span>
             </button>
           </div>
         </div>
@@ -233,7 +233,7 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
             <span>•</span>
             <span className="text-slate-500">
               {showCompleteData
-                ? 'Full Value & Qty displayed for all orders (بيانات كاملة)'
+                ? 'Full Value & Qty displayed for all orders'
                 : 'T0 Funds show complete data (Value & Qty). T1 Funds follow Egyptian settlement rules.'}
             </span>
           </div>
