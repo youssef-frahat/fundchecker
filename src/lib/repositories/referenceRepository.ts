@@ -126,3 +126,251 @@ export async function fetchAllFunds(): Promise<Fund[]> {
   }));
 }
 
+/**
+ * Inserts a new reference data record into PostgreSQL and syncs fund_schedules.
+ */
+export async function insertReferenceDataInDb(
+  item: Omit<ReferenceData, 'id'>,
+  userId?: string
+): Promise<ReferenceData> {
+  const supabase = await getDbClient();
+  const { data, error } = await supabase
+    .from('reference_data')
+    .insert([
+      {
+        symbol_code: item.symbolCode.trim(),
+        symbol_name: item.symbolName.trim(),
+        actual_symbol: item.actualSymbol.trim(),
+        email_contact: item.emailContact?.trim() || null,
+        nav_unit_price: item.navUnitPrice || 0,
+        fund_type: item.fundType || 'T0',
+        status: item.status || 'ACTIVE',
+        created_by: userId || null,
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`[DB ERROR] insertReferenceDataInDb: ${error.message}`);
+  }
+
+  if (item.scheduleFrequency || item.executionInstruction) {
+    await supabase.from('fund_schedules').insert({
+      fund_code: item.symbolCode.trim(),
+      fund_type: item.fundType || 'T0',
+      frequency: item.scheduleFrequency || 'DAILY',
+      raw_instruction: item.executionInstruction || (item.fundType === 'T1' ? 'T+1' : 'T+0'),
+      status: item.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+    });
+  }
+
+  return {
+    id: String(data.id),
+    symbolCode: String(data.symbol_code),
+    symbolName: String(data.symbol_name),
+    actualSymbol: String(data.actual_symbol),
+    emailContact: data.email_contact ? String(data.email_contact) : '',
+    navUnitPrice: Number(data.nav_unit_price) || 0,
+    fundType: data.fund_type as import('../types').SettlementType,
+    status: data.status as 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'CLOSED',
+    scheduleFrequency: item.scheduleFrequency || 'DAILY',
+    executionInstruction: item.executionInstruction || (item.fundType === 'T1' ? 'T+1' : 'T+0'),
+    createdAt: String(data.created_at || new Date().toISOString()),
+  };
+}
+
+/**
+ * Updates an existing reference data record in PostgreSQL and syncs fund_schedules.
+ */
+export async function updateReferenceDataInDb(
+  item: ReferenceData
+): Promise<ReferenceData> {
+  const supabase = await getDbClient();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
+
+  let query = supabase
+    .from('reference_data')
+    .update({
+      symbol_code: item.symbolCode.trim(),
+      symbol_name: item.symbolName.trim(),
+      actual_symbol: item.actualSymbol.trim(),
+      email_contact: item.emailContact?.trim() || null,
+      nav_unit_price: item.navUnitPrice || 0,
+      fund_type: item.fundType || 'T0',
+      status: item.status || 'ACTIVE',
+    });
+
+  if (isUuid) {
+    query = query.eq('id', item.id);
+  } else {
+    query = query.eq('symbol_code', item.symbolCode.trim());
+  }
+
+  const { data, error } = await query.select().single();
+
+  if (error) {
+    throw new Error(`[DB ERROR] updateReferenceDataInDb: ${error.message}`);
+  }
+
+  const symbolKey = item.symbolCode.trim();
+  const { data: existingSched } = await supabase
+    .from('fund_schedules')
+    .select('id')
+    .eq('fund_code', symbolKey)
+    .limit(1);
+
+  if (existingSched && existingSched.length > 0) {
+    await supabase
+      .from('fund_schedules')
+      .update({
+        fund_type: item.fundType || 'T0',
+        frequency: item.scheduleFrequency || 'DAILY',
+        raw_instruction: item.executionInstruction || '',
+        status: item.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+      })
+      .eq('id', existingSched[0].id);
+  } else if (item.scheduleFrequency || item.executionInstruction) {
+    await supabase.from('fund_schedules').insert({
+      fund_code: symbolKey,
+      fund_type: item.fundType || 'T0',
+      frequency: item.scheduleFrequency || 'DAILY',
+      raw_instruction: item.executionInstruction || '',
+      status: item.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+    });
+  }
+
+  return {
+    id: String(data.id),
+    symbolCode: String(data.symbol_code),
+    symbolName: String(data.symbol_name),
+    actualSymbol: String(data.actual_symbol),
+    emailContact: data.email_contact ? String(data.email_contact) : '',
+    navUnitPrice: Number(data.nav_unit_price) || 0,
+    fundType: data.fund_type as import('../types').SettlementType,
+    status: data.status as 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'CLOSED',
+    scheduleFrequency: item.scheduleFrequency || 'DAILY',
+    executionInstruction: item.executionInstruction || (item.fundType === 'T1' ? 'T+1' : 'T+0'),
+    createdAt: String(data.created_at || new Date().toISOString()),
+  };
+}
+
+/**
+ * Toggles reference data status (ACTIVE vs ARCHIVED).
+ */
+export async function archiveReferenceDataInDb(
+  id: string,
+  status: 'ACTIVE' | 'ARCHIVED'
+): Promise<boolean> {
+  const supabase = await getDbClient();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  let query = supabase.from('reference_data').update({ status });
+  if (isUuid) {
+    query = query.eq('id', id);
+  } else {
+    query = query.eq('symbol_code', id);
+  }
+
+  const { error } = await query;
+  if (error) {
+    throw new Error(`[DB ERROR] archiveReferenceDataInDb: ${error.message}`);
+  }
+  return true;
+}
+
+/**
+ * Permanently deletes a reference data record.
+ */
+export async function deleteReferenceDataInDb(id: string): Promise<boolean> {
+  const supabase = await getDbClient();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  let query = supabase.from('reference_data').delete();
+  if (isUuid) {
+    query = query.eq('id', id);
+  } else {
+    query = query.eq('symbol_code', id);
+  }
+
+  const { error } = await query;
+  if (error) {
+    throw new Error(`[DB ERROR] deleteReferenceDataInDb: ${error.message}`);
+  }
+  return true;
+}
+
+/**
+ * Bulk upserts reference data items (ON CONFLICT symbol_code DO UPDATE).
+ */
+export async function upsertReferenceDataBatchInDb(
+  items: Omit<ReferenceData, 'id'>[],
+  userId?: string
+): Promise<{ processed: number; count: number }> {
+  if (!items || items.length === 0) return { processed: 0, count: 0 };
+  const supabase = await getDbClient();
+
+  // Deduplicate by symbolCode keeping latest
+  const map = new Map<string, Omit<ReferenceData, 'id'>>();
+  for (const item of items) {
+    const code = item.symbolCode.trim();
+    if (code) {
+      map.set(code.toLowerCase(), item);
+    }
+  }
+  const uniqueItems = Array.from(map.values());
+
+  const records = uniqueItems.map((item) => ({
+    symbol_code: item.symbolCode.trim(),
+    symbol_name: item.symbolName.trim(),
+    actual_symbol: item.actualSymbol.trim(),
+    email_contact: item.emailContact?.trim() || null,
+    nav_unit_price: item.navUnitPrice || 0,
+    fund_type: item.fundType || 'T0',
+    status: item.status || 'ACTIVE',
+    created_by: userId || null,
+  }));
+
+  const { error } = await supabase
+    .from('reference_data')
+    .upsert(records, { onConflict: 'symbol_code' });
+
+  if (error) {
+    throw new Error(`[DB ERROR] upsertReferenceDataBatchInDb: ${error.message}`);
+  }
+
+  // Update schedules
+  for (const item of uniqueItems) {
+    if (item.scheduleFrequency || item.executionInstruction) {
+      const code = item.symbolCode.trim();
+      const { data: existing } = await supabase
+        .from('fund_schedules')
+        .select('id')
+        .eq('fund_code', code)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        await supabase
+          .from('fund_schedules')
+          .update({
+            fund_type: item.fundType || 'T0',
+            frequency: item.scheduleFrequency || 'DAILY',
+            raw_instruction: item.executionInstruction || '',
+            status: item.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+          })
+          .eq('id', existing[0].id);
+      } else {
+        await supabase.from('fund_schedules').insert({
+          fund_code: code,
+          fund_type: item.fundType || 'T0',
+          frequency: item.scheduleFrequency || 'DAILY',
+          raw_instruction: item.executionInstruction || '',
+          status: item.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+        });
+      }
+    }
+  }
+
+  return { processed: uniqueItems.length, count: uniqueItems.length };
+}
+

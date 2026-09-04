@@ -33,16 +33,17 @@ export interface FundRule {
 
 export interface ReferenceData {
   id: string;
-  symbolCode: string;     // الرمز (e.g. "1006")
-  symbolName: string;     // الاسم (e.g. "Aafaq Investment Fund")
-  actualSymbol: string;   // الرمز2 (e.g. "AFAC")
-  emailContact?: string;  // Email for future notifications
-  navUnitPrice: number;   // سعر الوثيقة الواحدة
-  fundType: SettlementType; // PROC-3: T0/T1/T2/DVP — used for rule evaluation
+  symbolCode: string; // Fund Symbol Code (e.g. "1006")
+  symbolName: string; // Fund Name (e.g. "Aafaq Investment Fund")
+  actualSymbol: string; // Actual Symbol / Ticker (e.g. "AFAC")
+  emailContact?: string; // Email for notifications
+  navUnitPrice: number; // NAV Unit Price
+  fundType: SettlementType; // T0/T1/T2/DVP — used for rule evaluation
   fundId?: string;
   status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'CLOSED';
   scheduleFrequency?: string;
   executionInstruction?: string;
+  createdAt?: string;
 }
 
 export interface RawTransactionRow {

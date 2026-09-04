@@ -1,16 +1,40 @@
 // Super Admin Reference Data & Fund Lifecycle Admin Component (White & Emerald Theme)
+// PRODUCTION READY: 100% English UI, Excel Bulk Import, Template Export, Full Database CRUD
 
 'use client';
 
-import React, { useState } from 'react';
-import { Database, Plus, Search, Edit3, Archive, CheckCircle2, Shield, AlertTriangle, ArrowRight } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import {
+  Database,
+  Plus,
+  Search,
+  Edit3,
+  Archive,
+  CheckCircle2,
+  AlertTriangle,
+  FileSpreadsheet,
+  Download,
+  Loader2,
+  X,
+} from 'lucide-react';
 import { ReferenceData, SettlementType } from '@/lib/types';
+import { parseMasterDataExcel, generateMasterDataTemplateExcel } from '@/lib/excel-engine';
 
 interface ReferenceDataAdminProps {
   referenceDataList: ReferenceData[];
-  onAddReferenceData: (item: Omit<ReferenceData, 'id'>) => void;
-  onUpdateReferenceData?: (item: ReferenceData) => void;
-  onArchiveReferenceData?: (id: string, status: 'ACTIVE' | 'ARCHIVED') => void;
+  onAddReferenceData: (
+    item: Omit<ReferenceData, 'id'>
+  ) => Promise<{ success: boolean; error?: string } | void> | void;
+  onUpdateReferenceData?: (
+    item: ReferenceData
+  ) => Promise<{ success: boolean; error?: string } | void> | void;
+  onArchiveReferenceData?: (
+    id: string,
+    status: 'ACTIVE' | 'ARCHIVED'
+  ) => Promise<{ success: boolean; error?: string } | void> | void;
+  onBulkImportReferenceData?: (
+    items: Omit<ReferenceData, 'id'>[]
+  ) => Promise<{ success: boolean; count?: number; error?: string }>;
 }
 
 export function ReferenceDataAdmin({
@@ -18,10 +42,25 @@ export function ReferenceDataAdmin({
   onAddReferenceData,
   onUpdateReferenceData,
   onArchiveReferenceData,
+  onBulkImportReferenceData,
 }: ReferenceDataAdminProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'ARCHIVED'>('ACTIVE');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'T0' | 'T1'>('ALL');
+
+  // Loading & Feedback States
+  const [isImporting, setIsImporting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  // Hidden File Input Ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -36,6 +75,13 @@ export function ReferenceDataAdmin({
   const [newScheduleFrequency, setNewScheduleFrequency] = useState('DAILY');
   const [newExecutionInstruction, setNewExecutionInstruction] = useState('');
 
+  // Auto-dismiss notification after 6 seconds
+  React.useEffect(() => {
+    if (!notification) return;
+    const timer = setTimeout(() => setNotification(null), 6000);
+    return () => clearTimeout(timer);
+  }, [notification]);
+
   // Filtered List
   const filteredData = referenceDataList.filter((r) => {
     const matchesSearch =
@@ -47,43 +93,194 @@ export function ReferenceDataAdmin({
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const handleCreateNew = () => {
+  const handleCreateNew = async () => {
     if (!newSymbolCode.trim() || !newSymbolName.trim() || !newActualSymbol.trim()) return;
-    onAddReferenceData({
-      symbolCode: newSymbolCode.trim(),
-      symbolName: newSymbolName.trim(),
-      actualSymbol: newActualSymbol.trim(),
-      emailContact: newEmailContact.trim(),
-      navUnitPrice: 0,
-      fundType: newFundType,
-      status: 'ACTIVE',
-      scheduleFrequency: newScheduleFrequency,
-      executionInstruction: newExecutionInstruction.trim(),
-    });
-    setShowAddModal(false);
-    setNewSymbolCode('');
-    setNewSymbolName('');
-    setNewActualSymbol('');
-    setNewEmailContact('');
-    setNewFundType('T0');
-    setNewScheduleFrequency('DAILY');
-    setNewExecutionInstruction('');
+    setIsCreating(true);
+    setCreateError(null);
+
+    try {
+      const res = await onAddReferenceData({
+        symbolCode: newSymbolCode.trim(),
+        symbolName: newSymbolName.trim(),
+        actualSymbol: newActualSymbol.trim(),
+        emailContact: newEmailContact.trim(),
+        navUnitPrice: 0,
+        fundType: newFundType,
+        status: 'ACTIVE',
+        scheduleFrequency: newScheduleFrequency,
+        executionInstruction: newExecutionInstruction.trim(),
+      });
+
+      if (res && !res.success) {
+        setCreateError(res.error || 'Failed to create fund.');
+        return;
+      }
+
+      setNotification({
+        type: 'success',
+        message: `Fund "${newSymbolCode.trim()}" created successfully in Master Data!`,
+      });
+      setShowAddModal(false);
+      setNewSymbolCode('');
+      setNewSymbolName('');
+      setNewActualSymbol('');
+      setNewEmailContact('');
+      setNewFundType('T0');
+      setNewScheduleFrequency('DAILY');
+      setNewExecutionInstruction('');
+    } catch (err: unknown) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create fund.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingFund || !onUpdateReferenceData) return;
-    onUpdateReferenceData(editingFund);
-    setEditingFund(null);
+    setIsSaving(true);
+    setEditError(null);
+
+    try {
+      const res = await onUpdateReferenceData(editingFund);
+      if (res && !res.success) {
+        setEditError(res.error || 'Failed to update fund in database.');
+        return;
+      }
+
+      setNotification({
+        type: 'success',
+        message: `Fund "${editingFund.symbolCode}" updated successfully in database!`,
+      });
+      setEditingFund(null);
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : 'Failed to update fund.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleToggleArchive = (fund: ReferenceData) => {
+  const handleToggleArchive = async (fund: ReferenceData) => {
     if (!onArchiveReferenceData) return;
     const nextStatus = fund.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE';
-    onArchiveReferenceData(fund.id, nextStatus);
+
+    try {
+      const res = await onArchiveReferenceData(fund.id, nextStatus);
+      if (res && !res.success) {
+        setNotification({
+          type: 'error',
+          message: res.error || 'Failed to change fund lifecycle status.',
+        });
+      } else {
+        setNotification({
+          type: 'success',
+          message: `Fund "${fund.symbolCode}" ${
+            nextStatus === 'ACTIVE' ? 'restored to ACTIVE' : 'moved to ARCHIVED'
+          } successfully.`,
+        });
+      }
+    } catch (err: unknown) {
+      setNotification({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to update status.',
+      });
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setNotification(null);
+
+    try {
+      const parsedItems = await parseMasterDataExcel(file);
+      if (parsedItems.length === 0) {
+        throw new Error('No valid fund rows could be extracted from the Excel spreadsheet.');
+      }
+
+      if (onBulkImportReferenceData) {
+        const res = await onBulkImportReferenceData(parsedItems);
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to import master data into database.');
+        }
+
+        setNotification({
+          type: 'success',
+          message: `Master Data synced! Successfully upserted ${
+            res.count || parsedItems.length
+          } funds in PostgreSQL database.`,
+        });
+      }
+    } catch (err: unknown) {
+      setNotification({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to parse and import Excel file.',
+      });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await generateMasterDataTemplateExcel(referenceDataList);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Master_Data_Funds_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to generate Excel template.',
+      });
+    }
   };
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+      {/* Hidden Excel File Input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept=".xlsx,.xls,.csv"
+        className="hidden"
+      />
+
+      {/* Dynamic Feedback Banner */}
+      {notification && (
+        <div
+          className={`p-4 rounded-xl flex items-center justify-between gap-3 text-xs font-semibold animate-in fade-in duration-200 border ${
+            notification.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-rose-50 text-rose-800 border-rose-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {notification.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{notification.message}</span>
+          </div>
+          <button
+            onClick={() => setNotification(null)}
+            className="text-slate-400 hover:text-slate-700 p-1 rounded"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Top Header & Operational Description */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
@@ -97,14 +294,41 @@ export function ReferenceDataAdmin({
             </span>
           </div>
           <p className="text-xs text-slate-600 mt-1">
-            Configure fund settlement rules (T0 vs T1), dynamic visibility matrices, schedules, and lifecycle status (Active / Archived).
+            Configure fund settlement rules (T0 vs T1), dynamic visibility matrices, schedules, and
+            lifecycle status. Changes persist directly to the PostgreSQL database.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Download Template / Export Button */}
+          <button
+            onClick={handleDownloadTemplate}
+            title="Download formatted Master Data Excel template or current dataset"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl shadow-2xs transition"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-500" />
+            Export / Template (.xlsx)
+          </button>
+
+          {/* Import Master Data Excel Button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            title="Upload Master Data spreadsheet to bulk update fund codes and settlement parameters"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl shadow-2xs transition cursor-pointer disabled:opacity-50"
+          >
+            {isImporting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+            ) : (
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            )}
+            {isImporting ? 'Importing Excel...' : 'Upload Master Data (.xlsx)'}
+          </button>
+
+          {/* Create New Fund Button */}
           <button
             onClick={() => setShowAddModal(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Create New Fund
@@ -127,7 +351,11 @@ export function ReferenceDataAdmin({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                {st === 'ACTIVE' ? 'Active Funds' : st === 'ARCHIVED' ? 'Archived Funds' : 'All Funds'}
+                {st === 'ACTIVE'
+                  ? 'Active Funds'
+                  : st === 'ARCHIVED'
+                  ? 'Archived Funds'
+                  : 'All Funds'}
               </button>
             ))}
           </div>
@@ -148,6 +376,10 @@ export function ReferenceDataAdmin({
               </button>
             ))}
           </div>
+
+          <span className="text-[11px] font-mono text-slate-500 ml-2">
+            Showing {filteredData.length} of {referenceDataList.length} funds
+          </span>
         </div>
 
         {/* Search Field */}
@@ -182,100 +414,131 @@ export function ReferenceDataAdmin({
             {filteredData.length === 0 ? (
               <tr>
                 <td colSpan={8} className="p-8 text-center text-slate-500 text-xs">
-                  No funds found in the database. Run <code className="bg-slate-100 px-1 py-0.5 rounded text-rose-700 font-mono">supabase/01_core_schema.sql</code> in the Supabase SQL editor to seed reference data, or click &quot;Create New Fund&quot; above.
+                  No funds found in the database. Use &quot;Upload Master Data (.xlsx)&quot; or click
+                  &quot;Create New Fund&quot; above.
                 </td>
               </tr>
             ) : (
               filteredData.map((row) => (
-                <tr key={row.id} className={`hover:bg-slate-50 transition ${row.status === 'ARCHIVED' || row.status === 'CLOSED' ? 'opacity-60 bg-slate-50/50' : ''}`}>
+                <tr
+                  key={row.id}
+                  className={`hover:bg-slate-50 transition ${
+                    row.status === 'ARCHIVED' || row.status === 'CLOSED'
+                      ? 'opacity-60 bg-slate-50/50'
+                      : ''
+                  }`}
+                >
                   <td className="p-3 font-semibold font-mono text-emerald-700">{row.symbolCode}</td>
                   <td className="p-3 font-bold text-slate-900">{row.symbolName}</td>
                   <td className="p-3 text-slate-600 font-mono">{row.actualSymbol}</td>
                   <td className="p-3 text-center">
-
-                  <span className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] font-mono border ${
-                    row.fundType === 'T1'
-                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}>
-                    {row.fundType || 'T0'}
-                  </span>
-                </td>
-                <td className="p-3 text-xs text-slate-600">
-                  {row.fundType === 'T1' ? (
-                    <span className="text-[11px] text-blue-800 font-medium">
-                      T1: BUY (Value only) | SELL (Qty only)
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-emerald-800 font-medium">
-                      T0: Full Data (Value &amp; Qty)
-                    </span>
-                  )}
-                </td>
-                <td className="p-3 text-xs">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-semibold text-slate-800 text-[11px]">
-                      {row.executionInstruction || (row.fundType === 'T1' ? 'T+1' : 'T+0')}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      Cycle: {row.scheduleFrequency || 'DAILY'}
-                    </span>
-                  </div>
-                </td>
-                <td className="p-3 text-center">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                    row.status === 'ARCHIVED'
-                      ? 'bg-slate-100 text-slate-600 border-slate-300'
-                      : row.status === 'CLOSED'
-                      ? 'bg-amber-50 text-amber-700 border-amber-300'
-                      : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                  }`}>
-                    {row.status || 'ACTIVE'}
-                  </span>
-                </td>
-                <td className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5">
-                    <button
-                      onClick={() => setEditingFund(row)}
-                      title="Edit Fund & Settlement Type"
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-800 p-1.5 rounded-lg text-xs font-semibold transition"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      onClick={() => handleToggleArchive(row)}
-                      title={row.status === 'ACTIVE' ? 'Archive Fund' : 'Restore Fund'}
-                      className={`p-1.5 rounded-lg text-xs font-semibold transition ${
-                        row.status === 'ACTIVE'
-                          ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
-                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] font-mono border ${
+                        row.fundType === 'T1'
+                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       }`}
                     >
-                      <Archive className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            )))}
-          </tbody>
+                      {row.fundType || 'T0'}
+                    </span>
+                  </td>
+                  <td className="p-3 text-xs text-slate-600">
+                    {row.fundType === 'T1' ? (
+                      <span className="text-[11px] text-blue-800 font-medium">
+                        T1: BUY (Value only) | SELL (Qty only)
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-emerald-800 font-medium">
+                        T0: Full Data (Value &amp; Qty)
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-3 text-xs">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-semibold text-slate-800 text-[11px]">
+                        {row.executionInstruction || (row.fundType === 'T1' ? 'T+1' : 'T+0')}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Cycle: {row.scheduleFrequency || 'DAILY'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="p-3 text-center">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        row.status === 'ARCHIVED'
+                          ? 'bg-slate-100 text-slate-600 border-slate-300'
+                          : row.status === 'CLOSED'
+                          ? 'bg-amber-50 text-amber-700 border-amber-300'
+                          : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      }`}
+                    >
+                      {row.status || 'ACTIVE'}
+                    </span>
+                  </td>
+                  <td className="p-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setEditError(null);
+                          setEditingFund({ ...row });
+                        }}
+                        title="Edit Fund & Settlement Type"
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 p-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
 
+                      <button
+                        onClick={() => handleToggleArchive(row)}
+                        title={row.status === 'ACTIVE' ? 'Archive Fund' : 'Restore Fund'}
+                        className={`p-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                          row.status === 'ACTIVE'
+                            ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        }`}
+                      >
+                        <Archive className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
         </table>
       </div>
 
       {/* CREATE FUND MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-emerald-700 border-b border-slate-100 pb-3">
-              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 shadow-sm">
-                <Plus className="w-6 h-6 text-emerald-600" />
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3 text-emerald-700">
+                <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 shadow-sm">
+                  <Plus className="w-6 h-6 text-emerald-600" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-base text-slate-900">Create New Fund Master</h4>
+                  <p className="text-xs text-slate-500">
+                    Assign Settlement Rules and Operational Parameters
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-extrabold text-base text-slate-900">Create New Fund Master</h4>
-                <p className="text-xs text-slate-500">Assign Settlement Rules and Operational Parameters</p>
-              </div>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
+
+            {createError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2 font-medium">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{createError}</span>
+              </div>
+            )}
 
             <div className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
@@ -335,7 +598,9 @@ export function ReferenceDataAdmin({
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Custodian Contact Email</label>
+                  <label className="block text-slate-700 font-semibold mb-1">
+                    Custodian Contact Email
+                  </label>
                   <input
                     type="email"
                     placeholder="custodian.fund@bank.com"
@@ -348,7 +613,9 @@ export function ReferenceDataAdmin({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Execution Cycle (Frequency)</label>
+                  <label className="block text-slate-700 font-semibold mb-1">
+                    Execution Cycle (Frequency)
+                  </label>
                   <select
                     value={newScheduleFrequency}
                     onChange={(e) => setNewScheduleFrequency(e.target.value)}
@@ -363,7 +630,9 @@ export function ReferenceDataAdmin({
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Execution Schedule / Rule</label>
+                  <label className="block text-slate-700 font-semibold mb-1">
+                    Execution Schedule / Rule
+                  </label>
                   <input
                     type="text"
                     placeholder="e.g. Weekly notice Thursday, execution Sunday"
@@ -377,16 +646,21 @@ export function ReferenceDataAdmin({
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
               <button
+                type="button"
                 onClick={() => setShowAddModal(false)}
+                disabled={isCreating}
                 className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleCreateNew}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
+                disabled={isCreating}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 disabled:opacity-50"
               >
-                Create Fund
+                {isCreating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isCreating ? 'Creating Fund...' : 'Create Fund'}
               </button>
             </div>
           </div>
@@ -395,17 +669,36 @@ export function ReferenceDataAdmin({
 
       {/* EDIT FUND LIFECYCLE MODAL */}
       {editingFund && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-emerald-700 border-b border-slate-100 pb-3">
-              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 shadow-sm">
-                <Edit3 className="w-6 h-6 text-emerald-600" />
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3 text-emerald-700">
+                <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 shadow-sm">
+                  <Edit3 className="w-6 h-6 text-emerald-600" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-base text-slate-900">
+                    Edit Fund Master &amp; Settlement Type
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Persists directly to database and updates execution matrices
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-extrabold text-base text-slate-900">Edit Fund Master &amp; Settlement Type</h4>
-                <p className="text-xs text-slate-500">Changes apply immediately to daily ingestion and transaction matrices</p>
-              </div>
+              <button
+                onClick={() => setEditingFund(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
+
+            {editError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2 font-medium">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{editError}</span>
+              </div>
+            )}
 
             <div className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
@@ -445,7 +738,12 @@ export function ReferenceDataAdmin({
                   <label className="block text-slate-700 font-semibold mb-1">Settlement Type *</label>
                   <select
                     value={editingFund.fundType || 'T0'}
-                    onChange={(e) => setEditingFund({ ...editingFund, fundType: e.target.value as SettlementType })}
+                    onChange={(e) =>
+                      setEditingFund({
+                        ...editingFund,
+                        fundType: e.target.value as SettlementType,
+                      })
+                    }
                     className="w-full bg-white border-2 border-emerald-600 rounded-xl p-2.5 text-emerald-950 font-bold focus:outline-none"
                   >
                     <option value="T0">T0 — Money Market / Daily Liquidity</option>
@@ -462,7 +760,12 @@ export function ReferenceDataAdmin({
                   <label className="block text-slate-700 font-semibold mb-1">Lifecycle Status</label>
                   <select
                     value={editingFund.status || 'ACTIVE'}
-                    onChange={(e) => setEditingFund({ ...editingFund, status: e.target.value as ReferenceData['status'] })}
+                    onChange={(e) =>
+                      setEditingFund({
+                        ...editingFund,
+                        status: e.target.value as ReferenceData['status'],
+                      })
+                    }
                     className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-semibold"
                   >
                     <option value="ACTIVE">ACTIVE (Operational)</option>
@@ -473,10 +776,14 @@ export function ReferenceDataAdmin({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Execution Cycle (Frequency)</label>
+                  <label className="block text-slate-700 font-semibold mb-1">
+                    Execution Cycle (Frequency)
+                  </label>
                   <select
                     value={editingFund.scheduleFrequency || 'DAILY'}
-                    onChange={(e) => setEditingFund({ ...editingFund, scheduleFrequency: e.target.value })}
+                    onChange={(e) =>
+                      setEditingFund({ ...editingFund, scheduleFrequency: e.target.value })
+                    }
                     className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-semibold focus:outline-none focus:border-emerald-600"
                   >
                     <option value="DAILY">DAILY — Every Business Day</option>
@@ -488,19 +795,25 @@ export function ReferenceDataAdmin({
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Execution Schedule / Rule</label>
+                  <label className="block text-slate-700 font-semibold mb-1">
+                    Execution Schedule / Rule
+                  </label>
                   <input
                     type="text"
                     placeholder="e.g. Weekly notice Thursday, execution Sunday"
                     value={editingFund.executionInstruction || ''}
-                    onChange={(e) => setEditingFund({ ...editingFund, executionInstruction: e.target.value })}
+                    onChange={(e) =>
+                      setEditingFund({ ...editingFund, executionInstruction: e.target.value })
+                    }
                     className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-mono focus:outline-none focus:border-emerald-600"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Custodian Contact Email</label>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Custodian Contact Email
+                </label>
                 <input
                   type="email"
                   value={editingFund.emailContact || ''}
@@ -512,16 +825,21 @@ export function ReferenceDataAdmin({
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
               <button
+                type="button"
                 onClick={() => setEditingFund(null)}
+                disabled={isSaving}
                 className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleSaveEdit}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
+                disabled={isSaving}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 disabled:opacity-50"
               >
-                Save Fund Changes
+                {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isSaving ? 'Saving Changes...' : 'Save Fund Changes'}
               </button>
             </div>
           </div>

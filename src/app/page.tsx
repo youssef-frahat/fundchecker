@@ -33,10 +33,11 @@ import {
   UserRole,
 } from '@/lib/types';
 import {
-  insertReferenceDataToDb,
-  updateReferenceDataInDb,
-  archiveReferenceDataInDb,
-} from '@/lib/db-service';
+  createReferenceDataAction,
+  updateReferenceDataAction,
+  archiveReferenceDataAction,
+  bulkImportReferenceDataAction,
+} from '@/app/actions/referenceActions';
 import { processTradeFileAction } from '@/app/actions/processingActions';
 import {
   uploadAllocationFileAction,
@@ -697,30 +698,78 @@ export default function InvestmentPlatformPage() {
     }
   };
 
-  const handleAddReferenceData = async (item: Omit<ReferenceData, 'id'>) => {
-    const createdItem = await insertReferenceDataToDb(item);
-    setReferenceDataList((prev) => [createdItem, ...prev]);
-    addAuditLog('CREATE_REFERENCE_DATA', 'REFERENCE_DATA', createdItem.id, { symbolCode: createdItem.symbolCode, fundType: createdItem.fundType });
+  const handleAddReferenceData = async (
+    item: Omit<ReferenceData, 'id'>
+  ): Promise<{ success: boolean; error?: string }> => {
+    const res = await createReferenceDataAction(item);
+    if (!res.success || !res.data) {
+      return { success: false, error: res.error || 'Failed to create fund.' };
+    }
+    setReferenceDataList((prev) => [res.data!, ...prev]);
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.refData) {
+      setReferenceDataList(wsData.refData);
+    }
+    return { success: true };
   };
 
-  const handleUpdateReferenceData = async (updatedItem: ReferenceData) => {
+  const handleUpdateReferenceData = async (
+    updatedItem: ReferenceData
+  ): Promise<{ success: boolean; error?: string }> => {
     setReferenceDataList((prev) =>
       prev.map((r) => (r.id === updatedItem.id ? updatedItem : r))
     );
-    await updateReferenceDataInDb(updatedItem);
-    addAuditLog('UPDATE_FUND_REFERENCE', 'REFERENCE_DATA', updatedItem.id, {
-      symbolCode: updatedItem.symbolCode,
-      fundType: updatedItem.fundType,
-      status: updatedItem.status,
-    });
+    const res = await updateReferenceDataAction(updatedItem);
+    if (!res.success) {
+      const wsData = await fetchWorkspaceDataAction();
+      if (wsData.success && wsData.refData) {
+        setReferenceDataList(wsData.refData);
+      }
+      return { success: false, error: res.error || 'Failed to update fund in database.' };
+    }
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.refData) {
+      setReferenceDataList(wsData.refData);
+    }
+    return { success: true };
   };
 
-  const handleArchiveReferenceData = async (id: string, status: 'ACTIVE' | 'ARCHIVED') => {
+  const handleArchiveReferenceData = async (
+    id: string,
+    status: 'ACTIVE' | 'ARCHIVED'
+  ): Promise<{ success: boolean; error?: string }> => {
     setReferenceDataList((prev) =>
       prev.map((r) => (r.id === id ? { ...r, status } : r))
     );
-    await archiveReferenceDataInDb(id, status);
-    addAuditLog(status === 'ARCHIVED' ? 'ARCHIVE_FUND' : 'RESTORE_FUND', 'REFERENCE_DATA', id, { status });
+    const res = await archiveReferenceDataAction(id, status);
+    if (!res.success) {
+      const wsData = await fetchWorkspaceDataAction();
+      if (wsData.success && wsData.refData) {
+        setReferenceDataList(wsData.refData);
+      }
+      return { success: false, error: res.error || 'Failed to change fund status.' };
+    }
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.refData) {
+      setReferenceDataList(wsData.refData);
+    }
+    return { success: true };
+  };
+
+  const handleBulkImportReferenceData = async (
+    items: Omit<ReferenceData, 'id'>[]
+  ): Promise<{ success: boolean; count?: number; error?: string }> => {
+    const res = await bulkImportReferenceDataAction(items);
+    if (!res.success) {
+      return { success: false, error: res.error || 'Failed to import master data.' };
+    }
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.refData) {
+      setReferenceDataList(wsData.refData);
+    }
+    const freshLogs = await fetchAuditLogsAction();
+    setAuditLogs(freshLogs);
+    return { success: true, count: res.count };
   };
 
   const handleAddUser = async (newUser: {
@@ -953,6 +1002,7 @@ export default function InvestmentPlatformPage() {
               onAddReferenceData={handleAddReferenceData}
               onUpdateReferenceData={handleUpdateReferenceData}
               onArchiveReferenceData={handleArchiveReferenceData}
+              onBulkImportReferenceData={handleBulkImportReferenceData}
             />
           </div>
         )}

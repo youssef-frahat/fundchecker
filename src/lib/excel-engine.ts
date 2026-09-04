@@ -1,7 +1,14 @@
 // Excel Ingestion & Export Engine - ExcelJS Powered Pipeline
 
 import ExcelJS from 'exceljs';
-import { GeneratedTransactionRow, NettingRow, RawTransactionRow, TransferSheetLine } from './types';
+import {
+  GeneratedTransactionRow,
+  NettingRow,
+  RawTransactionRow,
+  ReferenceData,
+  SettlementType,
+  TransferSheetLine,
+} from './types';
 import { formatFinancialNumber } from './netting-engine';
 
 /**
@@ -901,3 +908,238 @@ export async function exportTransferSheetBatchExcel(
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
 }
+
+/**
+ * Parses Master Data Excel file into ReferenceData items for bulk upsert.
+ * Auto-detects header row and supports both English and Arabic column names.
+ */
+export async function parseMasterDataExcel(file: File): Promise<Omit<ReferenceData, 'id'>[]> {
+  const buffer = await file.arrayBuffer();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  if (!workbook.worksheets || workbook.worksheets.length === 0) {
+    throw new Error('Workbook contains no worksheets.');
+  }
+
+  // Find target worksheet
+  let targetWs = workbook.worksheets[0];
+  let bestScore = -1;
+  let bestHeaderRow = 1;
+  let bestCols = {
+    colSymbolCode: 1,
+    colSymbolName: 2,
+    colActualSymbol: 3,
+    colFundType: 0,
+    colNavUnitPrice: 0,
+    colScheduleFrequency: 0,
+    colExecutionInstruction: 0,
+    colEmailContact: 0,
+    colStatus: 0,
+  };
+
+  for (const ws of workbook.worksheets) {
+    if (ws.rowCount <= 1) continue;
+
+    for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
+      const row = ws.getRow(r);
+      let score = 0;
+      const curCols = { ...bestCols };
+
+      row.eachCell((cell, colNumber) => {
+        const rawCell = extractCellValue(cell).trim();
+        const text = rawCell.toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]/g, '');
+        if (!text) return;
+
+        if (
+          text === 'symbolcode' || text === 'fundcode' || text === 'symbol' || text === 'code' ||
+          text.includes('رمز') || text.includes('كود')
+        ) {
+          curCols.colSymbolCode = colNumber;
+          score += 5;
+        } else if (
+          text === 'fundname' || text === 'symbolname' || text === 'name' ||
+          text.includes('اسم') || text.includes('صندوق')
+        ) {
+          curCols.colSymbolName = colNumber;
+          score += 4;
+        } else if (
+          text === 'actualsymbol' || text === 'actual' || text.includes('فعلي') || text.includes('الرمز2')
+        ) {
+          curCols.colActualSymbol = colNumber;
+          score += 3;
+        } else if (
+          text.includes('settlement') || text.includes('fundtype') || text.includes('تسوية') || text === 'type'
+        ) {
+          curCols.colFundType = colNumber;
+          score += 3;
+        } else if (
+          text.includes('nav') || text.includes('unitprice') || text.includes('price') || text.includes('سعر')
+        ) {
+          curCols.colNavUnitPrice = colNumber;
+          score += 2;
+        } else if (
+          text.includes('frequency') || text.includes('cycle') || text.includes('دورية')
+        ) {
+          curCols.colScheduleFrequency = colNumber;
+          score += 2;
+        } else if (
+          text.includes('schedule') || text.includes('instruction') || text.includes('تعليمات')
+        ) {
+          curCols.colExecutionInstruction = colNumber;
+          score += 2;
+        } else if (
+          text.includes('email') || text.includes('contact') || text.includes('بريد')
+        ) {
+          curCols.colEmailContact = colNumber;
+          score += 2;
+        } else if (
+          text.includes('status') || text.includes('حالة')
+        ) {
+          curCols.colStatus = colNumber;
+          score += 2;
+        }
+      });
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestHeaderRow = r;
+        bestCols = curCols;
+        targetWs = ws;
+      }
+    }
+  }
+
+  const items: Omit<ReferenceData, 'id'>[] = [];
+
+  for (let r = bestHeaderRow + 1; r <= targetWs.rowCount; r++) {
+    const row = targetWs.getRow(r);
+    const rawCode = bestCols.colSymbolCode ? extractCellValue(row.getCell(bestCols.colSymbolCode)).trim() : '';
+    if (!rawCode) continue;
+
+    const rawName = bestCols.colSymbolName ? extractCellValue(row.getCell(bestCols.colSymbolName)).trim() : '';
+    const rawActual = bestCols.colActualSymbol ? extractCellValue(row.getCell(bestCols.colActualSymbol)).trim() : '';
+    const rawType = bestCols.colFundType ? extractCellValue(row.getCell(bestCols.colFundType)).toUpperCase().trim() : '';
+    const rawNav = bestCols.colNavUnitPrice ? extractNumericValue(row.getCell(bestCols.colNavUnitPrice)) : 0;
+    const rawFreq = bestCols.colScheduleFrequency ? extractCellValue(row.getCell(bestCols.colScheduleFrequency)).toUpperCase().trim() : '';
+    const rawInst = bestCols.colExecutionInstruction ? extractCellValue(row.getCell(bestCols.colExecutionInstruction)).trim() : '';
+    const rawEmail = bestCols.colEmailContact ? extractCellValue(row.getCell(bestCols.colEmailContact)).trim() : '';
+    const rawStatus = bestCols.colStatus ? extractCellValue(row.getCell(bestCols.colStatus)).toUpperCase().trim() : '';
+
+    // Normalize Settlement Type
+    let fundType: SettlementType = 'T0';
+    if (rawType.includes('T1') || rawType === '1' || rawType.includes('EQUITY')) {
+      fundType = 'T1';
+    }
+
+    // Normalize Schedule Frequency
+    let scheduleFrequency = 'DAILY';
+    if (rawFreq.includes('WEEK') || rawFreq.includes('أسبوعي') || rawFreq.includes('اسبوعي')) {
+      scheduleFrequency = 'WEEKLY';
+    } else if (rawFreq.includes('BI') || rawFreq.includes('نصف')) {
+      scheduleFrequency = 'BIWEEKLY';
+    } else if (rawFreq.includes('MONTH') || rawFreq.includes('شهري')) {
+      scheduleFrequency = 'MONTHLY';
+    } else if (rawFreq.includes('CUSTOM') || rawFreq.includes('مخصص')) {
+      scheduleFrequency = 'CUSTOM';
+    }
+
+    // Normalize Status
+    let status: 'ACTIVE' | 'ARCHIVED' = 'ACTIVE';
+    if (rawStatus.includes('ARCH') || rawStatus.includes('INACT') || rawStatus.includes('مؤرشف') || rawStatus.includes('معطل')) {
+      status = 'ARCHIVED';
+    }
+
+    items.push({
+      symbolCode: rawCode,
+      symbolName: rawName || rawCode,
+      actualSymbol: rawActual || rawCode,
+      fundType,
+      navUnitPrice: rawNav || 0,
+      scheduleFrequency,
+      executionInstruction: rawInst || (fundType === 'T1' ? 'T+1' : 'T+0'),
+      emailContact: rawEmail || '',
+      status,
+    });
+  }
+
+  return items;
+}
+
+/**
+ * Generates an Excel template workbook for Master Data imports.
+ */
+export async function generateMasterDataTemplateExcel(currentData?: ReferenceData[]): Promise<Blob> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Fund Management Platform';
+  workbook.created = new Date();
+
+  const ws = workbook.addWorksheet('Master Data', {
+    views: [{ showGridLines: true }],
+  });
+
+  ws.columns = [
+    { header: 'Fund Code', key: 'symbolCode', width: 16 },
+    { header: 'Fund Name', key: 'symbolName', width: 35 },
+    { header: 'Actual Symbol', key: 'actualSymbol', width: 20 },
+    { header: 'Settlement Type (T0/T1)', key: 'fundType', width: 24 },
+    { header: 'NAV Unit Price', key: 'navUnitPrice', width: 18 },
+    { header: 'Execution Frequency (DAILY/WEEKLY/MONTHLY)', key: 'scheduleFrequency', width: 36 },
+    { header: 'Execution Instruction', key: 'executionInstruction', width: 32 },
+    { header: 'Custodian Contact Email', key: 'emailContact', width: 30 },
+    { header: 'Status (ACTIVE/ARCHIVED)', key: 'status', width: 24 },
+  ];
+
+  // Header Styling
+  const headerRow = ws.getRow(1);
+  headerRow.height = 28;
+  headerRow.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } }; // Emerald-700
+  headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+
+  if (currentData && currentData.length > 0) {
+    currentData.forEach((item) => {
+      ws.addRow({
+        symbolCode: item.symbolCode,
+        symbolName: item.symbolName,
+        actualSymbol: item.actualSymbol,
+        fundType: item.fundType || 'T0',
+        navUnitPrice: item.navUnitPrice || 0,
+        scheduleFrequency: item.scheduleFrequency || 'DAILY',
+        executionInstruction: item.executionInstruction || (item.fundType === 'T1' ? 'T+1' : 'T+0'),
+        emailContact: item.emailContact || '',
+        status: item.status || 'ACTIVE',
+      });
+    });
+  } else {
+    // Sample rows
+    ws.addRow({
+      symbolCode: '1001',
+      symbolName: 'AZ - IDKHAR',
+      actualSymbol: 'ADKHAR-AZ',
+      fundType: 'T0',
+      navUnitPrice: 10.5,
+      scheduleFrequency: 'DAILY',
+      executionInstruction: 'T+0 Execution Daily',
+      emailContact: 'ops.idkhar@fundbank.com',
+      status: 'ACTIVE',
+    });
+    ws.addRow({
+      symbolCode: '1006',
+      symbolName: 'Aafaq Investment Fund',
+      actualSymbol: 'AFAC',
+      fundType: 'T1',
+      navUnitPrice: 25.75,
+      scheduleFrequency: 'WEEKLY',
+      executionInstruction: 'Weekly notice Thursday, execution Sunday',
+      emailContact: 'custodian.aafaq@fundbank.com',
+      status: 'ACTIVE',
+    });
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
+
