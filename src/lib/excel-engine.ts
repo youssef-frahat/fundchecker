@@ -183,17 +183,26 @@ export async function parseTradingExcel(
         } else if (
           !orderValueLocked &&
           (text === 'ordervalue' ||
+           text === 'grossvalue' ||
+           text === 'grossamount' ||
            text.includes('ordervalue') ||
            text.includes('قيمةالأمر') ||
            text.includes('قيمةأمر') ||
+           text.includes('قيمةالعملية') ||
            text === 'orderamount' ||
-           (text.includes('value') && !text.includes('net') && !text.includes('settle') && !text.includes('date')) ||
-           (text.includes('قيمة') && !text.includes('صافي') && !text.includes('تسوية') && !text.includes('دفترية')) ||
-           (text.includes('amount') && !text.includes('net') && !text.includes('settle')) ||
+           (text.includes('value') && !text.includes('net') && !text.includes('settle') && !text.includes('date') && !text.includes('portfolio') && !text.includes('محفظة') && !text.includes('market') && !text.includes('سوقية')) ||
+           (text.includes('قيمة') && !text.includes('صافي') && !text.includes('تسوية') && !text.includes('دفترية') && !text.includes('محفظة') && !text.includes('سوقية')) ||
+           (text.includes('amount') && !text.includes('net') && !text.includes('settle') && !text.includes('blocked') && !text.includes('حجز')) ||
            text === 'مبلغ')
         ) {
           currentCols.colOrderValue = colNumber;
-          if (text === 'ordervalue' || text.includes('ordervalue') || text.includes('قيمةالأمر')) {
+          if (
+            text === 'ordervalue' ||
+            text.includes('ordervalue') ||
+            text.includes('قيمةالأمر') ||
+            text.includes('قيمةالعملية') ||
+            text === 'grossvalue'
+          ) {
             orderValueLocked = true;
           }
           matchScore += 5;
@@ -281,7 +290,17 @@ export async function parseTradingExcel(
 
     // Operations Rule: Order Value strictly represents Gross Notional (Quantity × Price)
     // Never let Net Settle (which has commissions deducted) contaminate Order Value
-    const orderValue = rawOrderVal > 0 ? rawOrderVal : rawNetSettle;
+    const calculatedGross = quantity > 0 && price > 0 ? Math.round(quantity * price * 10000) / 10000 : 0;
+    let orderValue = rawOrderVal > 0 ? rawOrderVal : (calculatedGross > 0 ? calculatedGross : rawNetSettle);
+    if (
+      calculatedGross > 0 &&
+      rawOrderVal > 0 &&
+      rawNetSettle > 0 &&
+      Math.abs(rawOrderVal - rawNetSettle) < 0.001 &&
+      Math.abs(calculatedGross - rawOrderVal) > 0.01
+    ) {
+      orderValue = calculatedGross;
+    }
     const netSettle = rawNetSettle > 0 ? rawNetSettle : orderValue;
     const isinCode = extractCellValue(row.getCell(colIsinCode));
     const orderDateRaw = extractCellValue(row.getCell(colOrderDate));

@@ -92,4 +92,18 @@ describe('Settlement Rule Engine (FIN-01 / Core Logic)', () => {
     const res = applyFundRules(rowWithBoth, 'T0', mockFundRules, '2026-08-30');
     assert.equal(res.externalCode, '226752177', 'External code in trade sheet must strictly be Mubasher No');
   });
+
+  it('Trade Sheet: Transaction Value must strictly take Gross Order Value, never Net Settle', () => {
+    const tradeWithCommissions: RawTransactionRow = {
+      ...baseRow,
+      quantity: 5000,
+      price: 6.0,
+      orderValue: 30000,
+      netSettle: 30162.25,
+    };
+    const res = applyFundRules(tradeWithCommissions, 'T0', mockFundRules, '2026-08-30');
+    assert.equal(res.transactionValue, 30000, 'Transaction Value must strictly be 30,000 (Order Value), not 30,162.25 (Net Settle)');
+    assert.notEqual(res.transactionValue, tradeWithCommissions.netSettle);
+  });
 });
+
