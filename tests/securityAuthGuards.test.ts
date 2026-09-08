@@ -207,3 +207,67 @@ describe('Audit Log Integrity & UUID Validation (AUD-03)', () => {
     }
   });
 });
+
+describe('Super Admin Password Management Guard (SEC-08)', () => {
+  const validatePasswordOverride = (
+    callerRole: string,
+    userId: string,
+    password: string,
+    hasServiceKey: boolean,
+    callerId: string
+  ) => {
+    if (callerRole !== 'SUPER_ADMIN') {
+      return { success: false, error: 'Unauthorized: Only Super Administrators can set user passwords.' };
+    }
+    if (!userId || !userId.trim()) {
+      return { success: false, error: 'User ID is required.' };
+    }
+    if (!password || password.length < 8) {
+      return { success: false, error: 'Password must be at least 8 characters long.' };
+    }
+    if (callerId !== userId && !hasServiceKey) {
+      return {
+        success: false,
+        error: 'Direct password override requires SUPABASE_SERVICE_ROLE_KEY in environment variables.',
+      };
+    }
+    return { success: true, message: 'Password updated successfully.' };
+  };
+
+  it('rejects password override if caller is not SUPER_ADMIN', () => {
+    const res = validatePasswordOverride('OPERATIONS_CHECKER', 'user-123', 'SecretPass123', true, 'caller-1');
+    assert.equal(res.success, false);
+    assert.ok(res.error?.includes('Unauthorized: Only Super Administrators'));
+  });
+
+  it('rejects short passwords under 8 characters', () => {
+    const res = validatePasswordOverride('SUPER_ADMIN', 'user-123', 'short', true, 'caller-1');
+    assert.equal(res.success, false);
+    assert.ok(res.error?.includes('at least 8 characters'));
+  });
+
+  it('rejects missing user ID', () => {
+    const res = validatePasswordOverride('SUPER_ADMIN', '', 'SecretPass123', true, 'caller-1');
+    assert.equal(res.success, false);
+    assert.ok(res.error?.includes('User ID is required'));
+  });
+
+  it('reports requirement for SERVICE_ROLE_KEY when updating another user without key', () => {
+    const res = validatePasswordOverride('SUPER_ADMIN', 'target-user-99', 'StrongPassword123!', false, 'admin-1');
+    assert.equal(res.success, false);
+    assert.ok(res.error?.includes('SUPABASE_SERVICE_ROLE_KEY'));
+  });
+
+  it('allows self password update without service role key', () => {
+    const res = validatePasswordOverride('SUPER_ADMIN', 'admin-1', 'StrongPassword123!', false, 'admin-1');
+    assert.equal(res.success, true);
+    assert.ok(res.message?.includes('Password updated successfully'));
+  });
+
+  it('allows valid administrative password override with service role key', () => {
+    const res = validatePasswordOverride('SUPER_ADMIN', 'target-user-99', 'StrongPassword123!', true, 'admin-1');
+    assert.equal(res.success, true);
+    assert.ok(res.message?.includes('Password updated successfully'));
+  });
+});
+

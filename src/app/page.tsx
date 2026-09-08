@@ -47,6 +47,7 @@ import {
   createUserAction,
   toggleUserStatusAction,
   resetUserPasswordAction,
+  setUserPasswordDirectlyAction,
 } from '@/app/actions/userActions';
 import { getCurrentSessionUserAction, logoutUserAction } from '@/app/actions/authActions';
 import { applyFundRules } from '@/lib/rule-engine';
@@ -445,6 +446,13 @@ export default function InvestmentPlatformPage() {
     return await resetUserPasswordAction(email);
   };
 
+  const handleSetUserPassword = async (
+    userId: string,
+    newPass: string
+  ): Promise<{ success: boolean; message?: string; error?: string }> => {
+    return await setUserPasswordDirectlyAction(userId, newPass);
+  };
+
   if (isVerifyingSession) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4 text-slate-700">
@@ -635,6 +643,7 @@ export default function InvestmentPlatformPage() {
               onAddUser={handleAddUser}
               onToggleUserStatus={handleToggleUserStatus}
               onResetPassword={handleResetPassword}
+              onSetUserPassword={handleSetUserPassword}
             />
             <ReferenceDataAdmin
               referenceDataList={referenceDataList}

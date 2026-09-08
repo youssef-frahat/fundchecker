@@ -3,7 +3,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Users, UserPlus, Shield, User, Search, KeyRound, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Users, UserPlus, Shield, User, Search, KeyRound, AlertTriangle, CheckCircle2, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 import { User as UserType, UserRole } from '@/lib/types';
 
 interface UserManagementAdminProps {
@@ -16,6 +16,7 @@ interface UserManagementAdminProps {
   }) => Promise<{ success: boolean; error?: string }>;
   onToggleUserStatus: (id: string, newStatus: 'ACTIVE' | 'INACTIVE') => Promise<{ success: boolean; error?: string }>;
   onResetPassword?: (email: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  onSetUserPassword?: (userId: string, newPassword: string) => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
 export function UserManagementAdmin({
@@ -23,6 +24,7 @@ export function UserManagementAdmin({
   onAddUser,
   onToggleUserStatus,
   onResetPassword,
+  onSetUserPassword,
 }: UserManagementAdminProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -36,6 +38,14 @@ export function UserManagementAdmin({
   const [modalError, setModalError] = useState<string | null>(null);
   const [bannerNotice, setBannerNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  // Direct Password Override State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [targetUserForPassword, setTargetUserForPassword] = useState<UserType | null>(null);
+  const [directPassword, setDirectPassword] = useState('');
+  const [showPasswordText, setShowPasswordText] = useState(false);
+  const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   const filteredUsers = users.filter(
     (u) =>
@@ -134,6 +144,35 @@ export function UserManagementAdmin({
       });
     } finally {
       setActionLoadingId(null);
+    }
+  };
+
+  const handleSaveDirectPassword = async () => {
+    if (!targetUserForPassword || !onSetUserPassword) return;
+    if (!directPassword || directPassword.length < 8) {
+      setPasswordModalError('Password must be at least 8 characters long.');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    setPasswordModalError(null);
+    try {
+      const res = await onSetUserPassword(targetUserForPassword.id, directPassword);
+      if (!res.success) {
+        setPasswordModalError(res.error || 'Failed to update user password.');
+      } else {
+        setBannerNotice({
+          type: 'success',
+          message: res.message || `Password for ${targetUserForPassword.fullName} updated successfully.`,
+        });
+        setShowPasswordModal(false);
+        setTargetUserForPassword(null);
+        setDirectPassword('');
+      }
+    } catch (err) {
+      setPasswordModalError(err instanceof Error ? err.message : 'Password update error');
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
 
@@ -287,7 +326,24 @@ export function UserManagementAdmin({
                           ) : (
                             <KeyRound className="w-3 h-3 text-slate-500" />
                           )}
-                          Reset Password
+                          Reset Email
+                        </button>
+                      )}
+
+                      {onSetUserPassword && (
+                        <button
+                          onClick={() => {
+                            setTargetUserForPassword(user);
+                            setDirectPassword('');
+                            setShowPasswordText(false);
+                            setPasswordModalError(null);
+                            setShowPasswordModal(true);
+                          }}
+                          title="Directly Set New Password"
+                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1"
+                        >
+                          <Lock className="w-3 h-3 text-emerald-600" />
+                          Set Password
                         </button>
                       )}
                     </div>
@@ -391,6 +447,88 @@ export function UserManagementAdmin({
           </div>
         </div>
       )}
+
+      {/* Direct Set Password Modal */}
+      {showPasswordModal && targetUserForPassword && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-emerald-700 border-b border-slate-100 pb-3">
+              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 shadow-sm">
+                <Lock className="w-6 h-6 text-emerald-600" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-base text-slate-900">Set New Password</h4>
+                <p className="text-xs text-slate-500">
+                  Update password for <span className="font-bold text-slate-800">{targetUserForPassword.fullName}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Email:</span>
+                <span className="font-mono font-semibold text-slate-800">{targetUserForPassword.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Role:</span>
+                <span className="font-semibold text-slate-800">{targetUserForPassword.role}</span>
+              </div>
+            </div>
+
+            {passwordModalError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{passwordModalError}</span>
+              </div>
+            )}
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">New Password * (Min. 8 characters)</label>
+                <div className="relative">
+                  <input
+                    type={showPasswordText ? 'text' : 'password'}
+                    placeholder="Enter new strong password..."
+                    value={directPassword}
+                    onChange={(e) => setDirectPassword(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-900 pr-10 focus:outline-none focus:border-emerald-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordText(!showPasswordText)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPasswordText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                disabled={isUpdatingPassword}
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setTargetUserForPassword(null);
+                  setDirectPassword('');
+                }}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={isUpdatingPassword}
+                onClick={handleSaveDirectPassword}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isUpdatingPassword && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isUpdatingPassword ? 'Saving Password...' : 'Save New Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

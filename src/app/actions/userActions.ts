@@ -251,3 +251,79 @@ export async function updateUserRoleAction(
     return { success: false, error: msg };
   }
 }
+
+/**
+ * Directly updates a user's password (Super Admin capability).
+ * If updating self, uses session client.
+ * If updating another user, uses SERVICE_ROLE_KEY or returns clear instructions.
+ */
+export async function setUserPasswordDirectlyAction(
+  userId: string,
+  newPassword: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const caller = await getAuthenticatedServerUser();
+    if (!caller || caller.role !== 'SUPER_ADMIN') {
+      return { success: false, error: 'Unauthorized: Only Super Administrators can set user passwords.' };
+    }
+
+    if (!userId || !userId.trim()) {
+      return { success: false, error: 'User ID is required.' };
+    }
+
+    if (!newPassword || newPassword.length < 8) {
+      return { success: false, error: 'Password must be at least 8 characters long.' };
+    }
+
+    // 1. If caller is updating their own password, use authenticated session client
+    if (caller.id === userId) {
+      const { createSupabaseServerClient } = await import('@/lib/supabase-server');
+      const supabase = await createSupabaseServerClient();
+      const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateErr) {
+        return { success: false, error: updateErr.message };
+      }
+    } else {
+      // 2. Updating another user's password requires Service Role Key
+      if (!SERVICE_ROLE_KEY) {
+        return {
+          success: false,
+          error:
+            'Direct password override requires SUPABASE_SERVICE_ROLE_KEY in environment variables. ' +
+            'Please add your service_role secret from Supabase Dashboard -> Project Settings -> API, or use the Reset Password Email button.',
+        };
+      }
+
+      const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+
+      const { error: adminErr } = await adminClient.auth.admin.updateUserById(userId, {
+        password: newPassword,
+      });
+
+      if (adminErr) {
+        return { success: false, error: `Authentication service error: ${adminErr.message}` };
+      }
+    }
+
+    // 3. Write Immutable Audit Record
+    await insertAuditLog({
+      id: crypto.randomUUID(),
+      userId: caller.id,
+      userName: caller.fullName,
+      action: 'ADMIN_SET_USER_PASSWORD',
+      entityName: 'USER',
+      entityId: userId,
+      newValues: { passwordChanged: true },
+      ipAddress: '127.0.0.1',
+      timestampUtc: new Date().toISOString(),
+    });
+
+    return { success: true, message: 'Password updated successfully.' };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Password update failed';
+    return { success: false, error: msg };
+  }
+}
+
