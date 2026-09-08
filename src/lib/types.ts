@@ -77,6 +77,8 @@ export interface GeneratedTransactionRow {
   name: string;               // Customer Name
   transactionValue: number | null; // Order Value (Subject to T0/T1 rule)
   qty: number | null;              // Quantity (Subject to T0/T1 rule)
+  rawQty?: number;                 // Raw Quantity directly from Excel cell (Col 10)
+  rawOrderValue?: number;          // Raw Order Value directly from Excel cell (Col 12)
   branchId: number;           // Constant 1
   valueDate: string;          // m/d/yyyy
   icPrice: number;            // Price

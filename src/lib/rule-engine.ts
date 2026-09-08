@@ -61,6 +61,8 @@ export function applyFundRules(
     name: rawRow.customerName,
     transactionValue,
     qty,
+    rawQty: rawRow.quantity,
+    rawOrderValue: rawRow.orderValue,
     branchId: 1,
     valueDate: processDateStr,
     icPrice: rawRow.price,

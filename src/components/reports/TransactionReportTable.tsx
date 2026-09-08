@@ -286,9 +286,13 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
             ) : (
               displayedRows.map((row, idx) => {
                 const isT0 = isT0Row(row);
-                // For T0 funds OR if complete data mode is active, display full values
-                const displayValue = row.transactionValue !== null ? row.transactionValue : null;
-                const displayQty = row.qty !== null ? row.qty : null;
+                // Directly map raw values from Excel cells (no equations)
+                const displayValue = showCompleteData
+                  ? (row.rawOrderValue ?? row.transactionValue)
+                  : (row.transactionValue !== null ? row.transactionValue : null);
+                const displayQty = showCompleteData
+                  ? (row.rawQty ?? row.qty)
+                  : (row.qty !== null ? row.qty : null);
 
                 return (
                   <tr key={idx} className="hover:bg-slate-50 transition">

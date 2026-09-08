@@ -117,8 +117,14 @@ describe('Settlement Rule Engine (FIN-01 / Core Logic)', () => {
     const res = applyFundRules(tradeRow, 'T0', mockFundRules, '2026-08-30');
     assert.equal(res.transactionValue, 1496.0476, 'Transaction Value must directly be 1496.0476 from Order Value (Col L)');
     assert.equal(res.qty, 62, 'Quantity must directly be 62 from Quantity column');
+    assert.equal(res.rawQty, 62, 'rawQty must preserve exact quantity from Excel cell');
+    assert.equal(res.rawOrderValue, 1496.0476, 'rawOrderValue must preserve exact Order Value from Excel cell');
     assert.equal(res.icPrice, 24.1298, 'Price must directly be 24.1298 from Price column');
     assert.notEqual(res.transactionValue, tradeRow.netSettle);
+
+    const t1Res = applyFundRules(tradeRow, 'T1', mockFundRules, '2026-08-30');
+    assert.equal(t1Res.qty, null, 'T1 BUY rule hides qty under standard rule');
+    assert.equal(t1Res.rawQty, 62, 'rawQty is preserved as 62 without any division by price or equations');
   });
 });
 

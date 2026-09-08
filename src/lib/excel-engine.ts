@@ -389,14 +389,21 @@ export async function exportSingleFundTransactionSheet(
   headerRow.eachCell((cell) => { cell.border = thinBorder; });
 
   for (const item of fundRows) {
+    const val = forceCompleteData
+      ? (item.rawOrderValue ?? (item.transactionValue !== null ? item.transactionValue : ''))
+      : (item.transactionValue !== null ? item.transactionValue : '');
+    const quantity = forceCompleteData
+      ? (item.rawQty ?? (item.qty !== null ? item.qty : ''))
+      : (item.qty !== null ? item.qty : '');
+
     const addedRow = ws.addRow({
       transactionId: item.transactionId,
       transactionType: item.transactionType.toLowerCase(), // lowercase 'buy' / 'sell'
       transactionDate: item.transactionDate,
       externalCode: item.externalCode,
       name: item.name,
-      transactionValue: item.transactionValue !== null ? item.transactionValue : '',
-      qty: item.qty !== null ? item.qty : '',
+      transactionValue: val,
+      qty: quantity,
       branchId: item.branchId,
       valueDate: item.valueDate,
       icPrice: item.icPrice,
@@ -481,14 +488,21 @@ export async function exportTransactionSheetsPerProduct(
 
     const prodRows = productMap.get(prodKey)!;
     for (const item of prodRows) {
+      const val = forceCompleteData
+        ? (item.rawOrderValue ?? (item.transactionValue !== null ? item.transactionValue : ''))
+        : (item.transactionValue !== null ? item.transactionValue : '');
+      const quantity = forceCompleteData
+        ? (item.rawQty ?? (item.qty !== null ? item.qty : ''))
+        : (item.qty !== null ? item.qty : '');
+
       const addedRow = ws.addRow({
         transactionId: item.transactionId,
         transactionType: item.transactionType.toLowerCase(), // lowercase 'buy' / 'sell'
         transactionDate: item.transactionDate,
         externalCode: item.externalCode,
         name: item.name,
-        transactionValue: item.transactionValue !== null ? item.transactionValue : '',
-        qty: item.qty !== null ? item.qty : '',
+        transactionValue: val,
+        qty: quantity,
         branchId: item.branchId,
         valueDate: item.valueDate,
         icPrice: item.icPrice,
@@ -582,14 +596,21 @@ export async function exportAllFundsAsZip(
     headerRow.eachCell((cell) => { cell.border = thinBorder; });
 
     for (const item of fundRows) {
+      const val = forceCompleteData
+        ? (item.rawOrderValue ?? (item.transactionValue !== null ? item.transactionValue : ''))
+        : (item.transactionValue !== null ? item.transactionValue : '');
+      const quantity = forceCompleteData
+        ? (item.rawQty ?? (item.qty !== null ? item.qty : ''))
+        : (item.qty !== null ? item.qty : '');
+
       const addedRow = ws.addRow({
         transactionId: item.transactionId,
         transactionType: item.transactionType.toLowerCase(),
         transactionDate: item.transactionDate,
         externalCode: item.externalCode,
         name: item.name,
-        transactionValue: item.transactionValue !== null ? item.transactionValue : '',
-        qty: item.qty !== null ? item.qty : '',
+        transactionValue: val,
+        qty: quantity,
         branchId: item.branchId,
         valueDate: item.valueDate,
         icPrice: item.icPrice,
