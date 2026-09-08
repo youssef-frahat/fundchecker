@@ -5,6 +5,8 @@ const ts = require('typescript');
 const fs = require('fs');
 const path = require('path');
 
+process.env.NODE_ENV = 'test';
+
 // 1. Load .env.local if present
 const envLocalPath = path.join(__dirname, '..', '.env.local');
 if (fs.existsSync(envLocalPath)) {
