@@ -208,6 +208,93 @@ CREATE TRIGGER trg_prevent_transfer_adjustment_on_locked_batch
     FOR EACH ROW
     EXECUTE FUNCTION public.prevent_transfer_adjustment_on_locked_batch();
 
+-- 7b. ENSURE TRANSFER BATCHES, LINES & ADJUSTMENTS SCHEMAS EXIST IDEMPOTENTLY
+CREATE TABLE IF NOT EXISTS public.transfer_sheet_batches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    batch_number VARCHAR(50) UNIQUE NOT NULL,
+    allocation_file_id UUID,
+    business_date DATE NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
+    total_buy_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    total_sell_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    total_net_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    maker_id VARCHAR(255),
+    maker_name VARCHAR(255),
+    checker_id VARCHAR(255),
+    checker_name VARCHAR(255),
+    rejection_reason TEXT,
+    approved_at TIMESTAMP WITH TIME ZONE,
+    locked_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+CREATE TABLE IF NOT EXISTS public.transfer_sheet_lines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    batch_id UUID NOT NULL REFERENCES public.transfer_sheet_batches(id) ON DELETE CASCADE,
+    symbol_code VARCHAR(50) NOT NULL,
+    symbol_name VARCHAR(255) NOT NULL,
+    actual_symbol VARCHAR(50),
+    system_buy_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    system_sell_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    system_net_amount NUMERIC(18, 4) GENERATED ALWAYS AS (system_sell_amount - system_buy_amount) STORED,
+    adjustment_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    adjustment_category VARCHAR(50),
+    adjustment_reason TEXT,
+    final_transfer_amount NUMERIC(18, 4) GENERATED ALWAYS AS ((system_sell_amount - system_buy_amount) + adjustment_amount) STORED,
+    is_manually_adjusted BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+CREATE TABLE IF NOT EXISTS public.transfer_line_adjustments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    batch_id UUID NOT NULL REFERENCES public.transfer_sheet_batches(id) ON DELETE CASCADE,
+    line_id UUID NOT NULL REFERENCES public.transfer_sheet_lines(id) ON DELETE CASCADE,
+    symbol_code VARCHAR(50) NOT NULL,
+    system_net_snapshot NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    old_adjustment_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    new_adjustment_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    delta NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    resulting_final_transfer NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    adjustment_category VARCHAR(50) NOT NULL DEFAULT 'MANUAL_ADJUSTMENT',
+    reason TEXT NOT NULL DEFAULT 'Operational adjustment',
+    user_id VARCHAR(255),
+    user_name VARCHAR(255),
+    client_ip VARCHAR(45) DEFAULT '127.0.0.1',
+    timestamp_utc TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- Ensure all columns exist on transfer_line_adjustments even if created by older migrations
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS adjustment_category VARCHAR(50) DEFAULT 'MANUAL_ADJUSTMENT';
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS delta NUMERIC(18, 4) DEFAULT 0;
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS resulting_final_transfer NUMERIC(18, 4) DEFAULT 0;
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS system_net_snapshot NUMERIC(18, 4) DEFAULT 0;
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS old_adjustment_amount NUMERIC(18, 4) DEFAULT 0;
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS new_adjustment_amount NUMERIC(18, 4) DEFAULT 0;
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS user_id VARCHAR(255);
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS user_name VARCHAR(255);
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS client_ip VARCHAR(45) DEFAULT '127.0.0.1';
+ALTER TABLE public.transfer_line_adjustments 
+    ADD COLUMN IF NOT EXISTS timestamp_utc TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW());
+
+-- Ensure transfer_sheet_lines has adjustment columns
+ALTER TABLE public.transfer_sheet_lines 
+    ADD COLUMN IF NOT EXISTS adjustment_category VARCHAR(50);
+ALTER TABLE public.transfer_sheet_lines 
+    ADD COLUMN IF NOT EXISTS adjustment_reason TEXT;
+
 -- 8. UPDATE ADJUSTMENT CATEGORIES CONSTRAINT (3 OPERATIONAL MODES)
 ALTER TABLE public.transfer_line_adjustments 
     DROP CONSTRAINT IF EXISTS transfer_line_adjustments_adjustment_category_check;
