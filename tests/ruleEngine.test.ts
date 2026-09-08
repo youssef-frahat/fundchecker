@@ -82,4 +82,14 @@ describe('Settlement Rule Engine (FIN-01 / Core Logic)', () => {
       /fundRules array is empty/
     );
   });
+
+  it('Trade Sheet: externalCode must strictly map to Mubasher No', () => {
+    const rowWithBoth: RawTransactionRow = {
+      ...baseRow,
+      mubasherNo: '226752177',
+      cashAccountNo: 'ACC-998811',
+    };
+    const res = applyFundRules(rowWithBoth, 'T0', mockFundRules, '2026-08-30');
+    assert.equal(res.externalCode, '226752177', 'External code in trade sheet must strictly be Mubasher No');
+  });
 });

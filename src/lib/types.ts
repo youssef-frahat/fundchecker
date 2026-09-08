@@ -212,6 +212,9 @@ export interface TransferSheetBatch {
 }
 
 export type AdjustmentCategory = 
+  | 'ADJUST_NET_VALUE'
+  | 'ADJUST_BUY'
+  | 'ADJUST_SELL'
   | 'BANK_FEE'
   | 'SETTLEMENT_DIFFERENCE'
   | 'CUSTODIAN_CORRECTION'

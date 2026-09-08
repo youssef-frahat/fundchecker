@@ -591,6 +591,7 @@ export default function InvestmentPlatformPage() {
               onAdjustLine={transferWs.handleAdjustTransferLine}
               onReviewSingleFund={transferWs.handleReviewSingleFund}
               onNewBatch={transferWs.handleNewTransferSheet}
+              referenceDataList={referenceDataList}
             />
           </div>
         )}

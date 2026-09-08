@@ -27,8 +27,9 @@ export function calculateNettingSheet(
 ): NettingSummary {
   const map = new Map<string, { buy: number; sell: number; ref?: ReferenceData }>();
 
-  // Initialize map with reference data symbols
+  // Initialize map with active reference data symbols (exclude archived)
   for (const ref of referenceDataList) {
+    if (ref.status === 'ARCHIVED') continue;
     const key = groupBy === 'actual_symbol' ? ref.actualSymbol : ref.symbolCode;
     if (!map.has(key)) {
       map.set(key, { buy: 0, sell: 0, ref });
@@ -45,6 +46,11 @@ export function calculateNettingSheet(
         r.actualSymbol.toLowerCase() === rawSymbol.toLowerCase() ||
         (rawDesc && r.symbolName.toLowerCase() === rawDesc.toLowerCase())
     );
+
+    // Rule: Archived funds must never appear in the cash transfer netting sheet
+    if (refMatch && refMatch.status === 'ARCHIVED') {
+      continue;
+    }
 
     const groupKey = groupBy === 'actual_symbol' 
       ? (refMatch?.actualSymbol || rawSymbol) 

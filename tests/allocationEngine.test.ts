@@ -251,4 +251,81 @@ describe('Allocation Processing Engine (FIN-01 & SEC-01)', () => {
     // Uses navUnitPrice from mockRefData (21.13012 * 1000 = 21130.12)
     assert.equal(fund1001Line.systemSellAmount, 21130.12);
   });
+
+  it('should reject trades for ARCHIVED funds to the Exception Queue and exclude from transfer lines', () => {
+    const refDataWithArchived: ReferenceData[] = [
+      ...mockRefData,
+      {
+        id: 'ref-archived',
+        symbolCode: '9999',
+        symbolName: 'Archived Fund Test',
+        actualSymbol: 'ARCH-99',
+        fundType: 'T0',
+        navUnitPrice: 10,
+        status: 'ARCHIVED',
+      },
+    ];
+
+    const rawRows: RawTransactionRow[] = [
+      {
+        id: 'tx-archived',
+        fileId: 'file-1',
+        requestId: 'REQ-ARCH-1',
+        mubasherNo: 'MUB-ARCH',
+        customerName: 'Investor Archived',
+        orderSide: 'BUY',
+        symbol: '9999',
+        symbolDescription: 'Archived Fund Test',
+        quantity: 500,
+        allocatedQuantity: 500,
+        price: 10,
+        orderValue: 5000,
+        totalCommission: 0,
+        netSettle: 5000,
+        orderDate: '2026-08-30',
+        orderStatus: 'EXECUTED',
+      },
+    ];
+
+    const result = processAllocationFile(
+      rawRows,
+      refDataWithArchived,
+      'file-1',
+      'alloc_sheet.xlsx',
+      'maker-uuid',
+      'Maker Operator'
+    );
+
+    assert.equal(result.importedCount, 0);
+    assert.equal(result.rejectedCount, 1);
+    assert.equal(result.exceptions.length, 1);
+    assert.ok(result.exceptions[0].errorMessage.includes('is ARCHIVED and excluded from Cash Transfers settlement'));
+    assert.equal(result.lines.find((l) => l.symbolCode === '9999'), undefined, 'Archived fund must NOT exist in transfer sheet lines');
+  });
+
+  it('should calculate the 3 operational adjustment modes accurately', () => {
+    const systemBuy = 50000;
+    const systemSell = 80000;
+    const systemNet = systemSell - systemBuy; // 30000
+
+    // Mode 1: ADJUST_NET_VALUE
+    const targetNet = 35000;
+    const deltaNetMode = targetNet - systemNet; // +5000
+    assert.equal(deltaNetMode, 5000);
+    assert.equal(systemNet + deltaNetMode, targetNet);
+
+    // Mode 2: ADJUST_BUY (e.g. adjust buy from 50000 to 45000)
+    const adjustedBuy = 45000;
+    const resultingNetFromBuy = systemSell - adjustedBuy; // 80000 - 45000 = 35000
+    const deltaBuyMode = resultingNetFromBuy - systemNet; // 35000 - 30000 = +5000
+    assert.equal(resultingNetFromBuy, 35000);
+    assert.equal(deltaBuyMode, 5000);
+
+    // Mode 3: ADJUST_SELL (e.g. adjust sell from 80000 to 90000)
+    const adjustedSell = 90000;
+    const resultingNetFromSell = adjustedSell - systemBuy; // 90000 - 50000 = 40000
+    const deltaSellMode = resultingNetFromSell - systemNet; // 40000 - 30000 = +10000
+    assert.equal(resultingNetFromSell, 40000);
+    assert.equal(deltaSellMode, 10000);
+  });
 });

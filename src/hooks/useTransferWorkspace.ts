@@ -61,9 +61,21 @@ export function useTransferWorkspace({
       ? calculateNettingSheet(rawTransactions, referenceDataList, 'symbol', perFundReviewStates)
       : null;
 
-  const effectiveNettingRows: NettingRow[] =
-    currentTransferBatch?.lines && currentTransferBatch.lines.length > 0
-      ? currentTransferBatch.lines.map((l) => ({
+  // Isolate archived funds to guarantee they never appear in the Transfer Sheet
+  const archivedSymbols = new Set(
+    referenceDataList
+      .filter((r) => r.status === 'ARCHIVED')
+      .flatMap((r) => [r.symbolCode.toLowerCase(), r.actualSymbol?.toLowerCase()].filter(Boolean))
+  );
+
+  const rawLines = currentTransferBatch?.lines && currentTransferBatch.lines.length > 0
+    ? currentTransferBatch.lines
+        .filter(
+          (l) =>
+            !archivedSymbols.has(l.symbolCode.toLowerCase()) &&
+            (!l.actualSymbol || !archivedSymbols.has(l.actualSymbol.toLowerCase()))
+        )
+        .map((l) => ({
           symbolCode: l.symbolCode,
           symbolName: l.symbolName,
           actualSymbol: l.actualSymbol || l.symbolCode,
@@ -82,17 +94,17 @@ export function useTransferWorkspace({
             ? 'UNDER_REVIEW'
             : 'DRAFT') as 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED',
         }))
-      : fallbackNetting?.rows || [];
+    : (fallbackNetting?.rows || []).filter(
+        (r) =>
+          !archivedSymbols.has(r.symbolCode.toLowerCase()) &&
+          (!r.actualSymbol || !archivedSymbols.has(r.actualSymbol.toLowerCase()))
+      );
 
-  const effectiveTotalBuy = currentTransferBatch
-    ? currentTransferBatch.totalBuyAmount
-    : fallbackNetting?.totalBuy || 0;
-  const effectiveTotalSell = currentTransferBatch
-    ? currentTransferBatch.totalSellAmount
-    : fallbackNetting?.totalSell || 0;
-  const effectiveTotalNet = currentTransferBatch
-    ? currentTransferBatch.totalNetAmount
-    : fallbackNetting?.totalNet || 0;
+  const effectiveNettingRows: NettingRow[] = rawLines;
+
+  const effectiveTotalBuy = effectiveNettingRows.reduce((acc, r) => acc + (r.buyTotal || 0), 0);
+  const effectiveTotalSell = effectiveNettingRows.reduce((acc, r) => acc + (r.sellTotal || 0), 0);
+  const effectiveTotalNet = effectiveNettingRows.reduce((acc, r) => acc + (r.netAmount || 0), 0);
 
   const handleMakerSubmit = async () => {
     if (currentTransferBatch) {

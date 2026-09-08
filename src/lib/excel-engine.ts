@@ -80,6 +80,7 @@ export async function parseTradingExcel(
     colQuantity: 10,
     colPrice: 11,
     colOrderValue: 12,
+    colCashAccountNo: 15,
     colIsinCode: 18,
     colOrderDate: 25,
     colAllocatedQuantity: 35,
@@ -91,6 +92,7 @@ export async function parseTradingExcel(
     for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
       const row = ws.getRow(r);
       let matchScore = 0;
+      let mubasherLocked = false;
       const currentCols = { ...bestCols };
 
       row.eachCell((cell, colNumber) => {
@@ -121,8 +123,22 @@ export async function parseTradingExcel(
           currentCols.colAllocatedQuantity = colNumber;
           matchScore += 4;
         } else if (
-          text.includes('mubasher') || text.includes('externalcode') || text.includes('customerno') || text.includes('clientcode') || text.includes('accountno') ||
-          text.includes('مباشر') || text.includes('كودعميل') || text.includes('رقمحساب') || text.includes('رقمعميل')
+          text.includes('cash') || text.includes('حسابنقدي') || text.includes('حسابكاش') || text === 'كاش'
+        ) {
+          // Explicitly isolate Cash Account No to never collide with Mubasher No
+          currentCols.colCashAccountNo = colNumber;
+          matchScore += 2;
+        } else if (
+          text.includes('mubasher') || text.includes('مباشر') || text === 'mubasherno'
+        ) {
+          currentCols.colMubasherNo = colNumber;
+          mubasherLocked = true;
+          matchScore += 5;
+        } else if (
+          !mubasherLocked &&
+          (text.includes('externalcode') || text.includes('customerno') || text.includes('clientcode') ||
+           text.includes('كودعميل') || text.includes('رقمعميل') ||
+           (text === 'accountno' && !text.includes('cash')))
         ) {
           currentCols.colMubasherNo = colNumber;
           matchScore += 3;
@@ -205,6 +221,7 @@ export async function parseTradingExcel(
     colQuantity,
     colPrice,
     colOrderValue,
+    colCashAccountNo,
     colIsinCode,
     colOrderDate,
     colAllocatedQuantity,
@@ -227,6 +244,7 @@ export async function parseTradingExcel(
 
     const requestId = extractCellValue(row.getCell(colRequestId)) || '';
     const mubasherNo = extractCellValue(row.getCell(colMubasherNo));
+    const cashAccountNo = colCashAccountNo ? extractCellValue(row.getCell(colCashAccountNo)) : undefined;
 
     const customerName = extractCellValue(row.getCell(colCustomerName));
     const rawOrderSide = extractCellValue(row.getCell(colOrderSide));
@@ -269,6 +287,7 @@ export async function parseTradingExcel(
         // Keep raw values — downstream allocationEngine validation rejects missing fields
         requestId,
         mubasherNo: mubasherNo || '',
+        cashAccountNo: cashAccountNo || undefined,
         customerName: customerName || '',
         orderSide,
         symbol: effectiveSymbol,

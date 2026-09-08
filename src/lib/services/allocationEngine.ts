@@ -187,6 +187,22 @@ export function processAllocationFile(
         r.symbolName.toLowerCase() === symClean
     );
 
+    // Rule: Archived funds must never appear in the Cash Transfer Sheet
+    if (matchedRef && matchedRef.status === 'ARCHIVED') {
+      rejectedCount++;
+      exceptions.push({
+        id: crypto.randomUUID(),
+        fileId: allocationFileId,
+        fileName,
+        exceptionType: 'SCHEMATIC_ERR',
+        errorMessage: `Row ${rowNum}: Fund "${matchedRef.symbolCode}" (${matchedRef.symbolName}) is ARCHIVED and excluded from Cash Transfers settlement.`,
+        rawPayload: { rowNum, ...row },
+        status: 'OPEN',
+        createdAt: new Date().toISOString(),
+      });
+      continue;
+    }
+
     // 6. Price Resolution: Direct Price -> Order Value / Alloc Qty -> Fund Reference NAV Unit Price
     let price = Number(row.price) || 0;
     if (price <= 0) {
