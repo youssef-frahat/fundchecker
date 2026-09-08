@@ -106,18 +106,19 @@ describe('Settlement Rule Engine (FIN-01 / Core Logic)', () => {
     assert.notEqual(res.transactionValue, tradeWithCommissions.netSettle);
   });
 
-  it('Trade Sheet: Contaminated orderValue (e.g. Net Settle passed in) is automatically healed to Quantity x Price', () => {
-    const contaminatedTrade: RawTransactionRow = {
+  it('Trade Sheet: Transaction Value directly maps from Order Value (Col L), never Net Settle (Col N)', () => {
+    const tradeRow: RawTransactionRow = {
       ...baseRow,
       quantity: 62,
       price: 24.1298,
-      orderValue: 1497.82, // Contaminated with Net Settle fees
-      netSettle: 1497.82,
+      orderValue: 1496.0476, // Col L directly from Excel
+      netSettle: 1497.82,    // Col N with fees
     };
-    const res = applyFundRules(contaminatedTrade, 'T0', mockFundRules, '2026-08-30');
-    const expected = Math.round(62 * 24.1298 * 10000) / 10000;
-    assert.equal(res.transactionValue, expected, `Transaction Value must be healed to ${expected} (Quantity x Price), not 1497.82`);
-    assert.notEqual(res.transactionValue, 1497.82);
+    const res = applyFundRules(tradeRow, 'T0', mockFundRules, '2026-08-30');
+    assert.equal(res.transactionValue, 1496.0476, 'Transaction Value must directly be 1496.0476 from Order Value (Col L)');
+    assert.equal(res.qty, 62, 'Quantity must directly be 62 from Quantity column');
+    assert.equal(res.icPrice, 24.1298, 'Price must directly be 24.1298 from Price column');
+    assert.notEqual(res.transactionValue, tradeRow.netSettle);
   });
 });
 

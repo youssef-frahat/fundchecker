@@ -80,7 +80,7 @@ export async function parseTradingExcel(
     colQuantity: 10,
     colPrice: 11,
     colOrderValue: 12,
-    colNetSettle: 0,
+    colNetSettle: 14,
     colCashAccountNo: 15,
     colIsinCode: 18,
     colOrderDate: 25,
@@ -288,13 +288,10 @@ export async function parseTradingExcel(
     const rawOrderVal = colOrderValue ? extractNumericValue(row.getCell(colOrderValue)) : 0;
     const rawNetSettle = colNetSettle ? extractNumericValue(row.getCell(colNetSettle)) : 0;
 
-    // Operations Rule: Order Value strictly represents Gross Notional (Quantity × Price)
-    // Never let Net Settle (which has commissions deducted) contaminate Order Value
-    const calculatedGross = quantity > 0 && price > 0 ? Math.round(quantity * price * 10000) / 10000 : 0;
-    let orderValue = calculatedGross > 0
-      ? (rawOrderVal > 0 && Math.abs(rawOrderVal - calculatedGross) <= 0.01 ? rawOrderVal : calculatedGross)
-      : (rawOrderVal > 0 ? rawOrderVal : rawNetSettle);
-    const netSettle = rawNetSettle > 0 ? rawNetSettle : orderValue;
+    // Direct Extraction (No formulas/equations):
+    // Quantity from Quantity column, Price from Price column, and Order Value (Column L, not Net Settle) as Order Value
+    const orderValue = rawOrderVal;
+    const netSettle = rawNetSettle;
     const isinCode = extractCellValue(row.getCell(colIsinCode));
     const orderDateRaw = extractCellValue(row.getCell(colOrderDate));
     const allocatedQuantity = colAllocatedQuantity ? extractNumericValue(row.getCell(colAllocatedQuantity)) : 0;
@@ -317,24 +314,13 @@ export async function parseTradingExcel(
       orderSide = 'SELL';
     }
 
-    if (requestId || effectiveSymbol !== 'UNKNOWN_SYMBOL' || orderValue > 0) {
-      // Calculate derived quantity from Order Value (not Net Settle) to prevent fractional anomalies
-      let derivedQty = quantity;
-      if (derivedQty <= 0 && price > 0 && orderValue > 0) {
-        const rawCalc = orderValue / price;
-        const rounded = Math.round(rawCalc);
-        derivedQty = Math.abs(rawCalc - rounded) < 0.0001 ? rounded : Math.round(rawCalc * 10000) / 10000;
-      } else if (derivedQty <= 0) {
-        derivedQty = allocatedQuantity > 0 ? allocatedQuantity : 1;
-      }
-
-      const derivedPrice = price > 0 ? price : (derivedQty > 0 && orderValue > 0 ? orderValue / derivedQty : 0);
-      const derivedOrderValue = orderValue > 0 ? orderValue : derivedQty * derivedPrice;
+    if (requestId || effectiveSymbol !== 'UNKNOWN_SYMBOL' || orderValue > 0 || quantity > 0) {
+      const finalQty = quantity > 0 ? quantity : (allocatedQuantity > 0 ? allocatedQuantity : 0);
 
       rows.push({
         id: `tx-${rowNumber}-${Date.now()}`,
         fileId,
-        // Keep raw values — downstream allocationEngine validation rejects missing fields
+        // Keep raw values directly from Excel row — zero formula calculation
         requestId,
         mubasherNo: mubasherNo || '',
         cashAccountNo: cashAccountNo || undefined,
@@ -343,11 +329,11 @@ export async function parseTradingExcel(
         symbol: effectiveSymbol,
         symbolDescription: effectiveDescription,
         orderStatus: rawOrderStatus,
-        allocatedQuantity: allocatedQuantity > 0 ? allocatedQuantity : derivedQty,
-        quantity: derivedQty,
-        price: derivedPrice,
-        orderValue: derivedOrderValue,
-        netSettle: netSettle > 0 ? netSettle : derivedOrderValue,
+        allocatedQuantity: allocatedQuantity > 0 ? allocatedQuantity : finalQty,
+        quantity: finalQty,
+        price: price,
+        orderValue: orderValue,
+        netSettle: netSettle,
         isinCode,
         orderDate: orderDateRaw || new Date().toISOString(),
       });
@@ -403,31 +389,14 @@ export async function exportSingleFundTransactionSheet(
   headerRow.eachCell((cell) => { cell.border = thinBorder; });
 
   for (const item of fundRows) {
-    let val: number | string = '';
-    if (item.transactionValue !== null) {
-      val = item.transactionValue;
-      if (item.qty !== null && item.qty > 0 && item.icPrice && item.icPrice > 0) {
-        const expectedGross = Math.round(item.qty * item.icPrice * 10000) / 10000;
-        if (Math.abs(item.transactionValue - expectedGross) > 0.01) {
-          val = expectedGross;
-        }
-      }
-    } else if (forceCompleteData && item.qty !== null && item.icPrice) {
-      val = Math.round(item.qty * item.icPrice * 10000) / 10000;
-    }
-
-    const quantity = item.qty !== null
-      ? item.qty
-      : (forceCompleteData && typeof val === 'number' && item.icPrice ? Math.round((val / item.icPrice) * 10000) / 10000 : '');
-
     const addedRow = ws.addRow({
       transactionId: item.transactionId,
       transactionType: item.transactionType.toLowerCase(), // lowercase 'buy' / 'sell'
       transactionDate: item.transactionDate,
       externalCode: item.externalCode,
       name: item.name,
-      transactionValue: val,
-      qty: quantity,
+      transactionValue: item.transactionValue !== null ? item.transactionValue : '',
+      qty: item.qty !== null ? item.qty : '',
       branchId: item.branchId,
       valueDate: item.valueDate,
       icPrice: item.icPrice,
@@ -512,31 +481,14 @@ export async function exportTransactionSheetsPerProduct(
 
     const prodRows = productMap.get(prodKey)!;
     for (const item of prodRows) {
-      let val: number | string = '';
-      if (item.transactionValue !== null) {
-        val = item.transactionValue;
-        if (item.qty !== null && item.qty > 0 && item.icPrice && item.icPrice > 0) {
-          const expectedGross = Math.round(item.qty * item.icPrice * 10000) / 10000;
-          if (Math.abs(item.transactionValue - expectedGross) > 0.01) {
-            val = expectedGross;
-          }
-        }
-      } else if (forceCompleteData && item.qty !== null && item.icPrice) {
-        val = Math.round(item.qty * item.icPrice * 10000) / 10000;
-      }
-
-      const quantity = item.qty !== null
-        ? item.qty
-        : (forceCompleteData && typeof val === 'number' && item.icPrice ? Math.round((val / item.icPrice) * 10000) / 10000 : '');
-
       const addedRow = ws.addRow({
         transactionId: item.transactionId,
         transactionType: item.transactionType.toLowerCase(), // lowercase 'buy' / 'sell'
         transactionDate: item.transactionDate,
         externalCode: item.externalCode,
         name: item.name,
-        transactionValue: val,
-        qty: quantity,
+        transactionValue: item.transactionValue !== null ? item.transactionValue : '',
+        qty: item.qty !== null ? item.qty : '',
         branchId: item.branchId,
         valueDate: item.valueDate,
         icPrice: item.icPrice,
@@ -630,31 +582,14 @@ export async function exportAllFundsAsZip(
     headerRow.eachCell((cell) => { cell.border = thinBorder; });
 
     for (const item of fundRows) {
-      let val: number | string = '';
-      if (item.transactionValue !== null) {
-        val = item.transactionValue;
-        if (item.qty !== null && item.qty > 0 && item.icPrice && item.icPrice > 0) {
-          const expectedGross = Math.round(item.qty * item.icPrice * 10000) / 10000;
-          if (Math.abs(item.transactionValue - expectedGross) > 0.01) {
-            val = expectedGross;
-          }
-        }
-      } else if (forceCompleteData && item.qty !== null && item.icPrice) {
-        val = Math.round(item.qty * item.icPrice * 10000) / 10000;
-      }
-
-      const quantity = item.qty !== null
-        ? item.qty
-        : (forceCompleteData && typeof val === 'number' && item.icPrice ? Math.round((val / item.icPrice) * 10000) / 10000 : '');
-
       const addedRow = ws.addRow({
         transactionId: item.transactionId,
         transactionType: item.transactionType.toLowerCase(),
         transactionDate: item.transactionDate,
         externalCode: item.externalCode,
         name: item.name,
-        transactionValue: val,
-        qty: quantity,
+        transactionValue: item.transactionValue !== null ? item.transactionValue : '',
+        qty: item.qty !== null ? item.qty : '',
         branchId: item.branchId,
         valueDate: item.valueDate,
         icPrice: item.icPrice,

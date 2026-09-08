@@ -48,19 +48,9 @@ export function applyFundRules(
     }
   }
 
-  // Operations Financial Guard: Transaction Value strictly represents Gross Order Value (Column L = Quantity x Price)
-  // Never permit Net Settle (Column N = Gross + Commission) into Transaction Value
-  let transactionValue: number | null = null;
-  if (matchingRule.isTransactionValueVisible) {
-    if (rawRow.quantity > 0 && rawRow.price > 0) {
-      const calculatedGross = Math.round(rawRow.quantity * rawRow.price * 10000) / 10000;
-      transactionValue = rawRow.orderValue > 0 && Math.abs(rawRow.orderValue - calculatedGross) <= 0.01
-        ? rawRow.orderValue
-        : calculatedGross;
-    } else {
-      transactionValue = rawRow.orderValue;
-    }
-  }
+  // Direct extraction from Excel row as requested (No formulas):
+  // Order Value from Excel is Transaction Value, Quantity from Excel is Quantity, Price from Excel is Price
+  const transactionValue = matchingRule.isTransactionValueVisible ? rawRow.orderValue : null;
   const qty = matchingRule.isQuantityVisible ? rawRow.quantity : null;
 
   return {

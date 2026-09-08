@@ -107,24 +107,13 @@ export async function generateFundTransactions(
 
     // Add data rows matching media_1788005857699.png
     for (const row of group.rows) {
-      let txVal: number | string = '';
-      if (row.transactionValue !== null) {
-        txVal = row.transactionValue;
-        if (row.qty !== null && row.qty > 0 && row.icPrice && row.icPrice > 0) {
-          const expectedGross = Math.round(row.qty * row.icPrice * 10000) / 10000;
-          if (Math.abs(row.transactionValue - expectedGross) > 0.01) {
-            txVal = expectedGross;
-          }
-        }
-      }
-
       const addedRow = sheet.addRow({
         transactionId: row.transactionId,
         transactionType: row.transactionType.toLowerCase(), // lowercase 'buy' / 'sell' as in screenshot
         transactionDate: row.transactionDate,
         externalCode: row.externalCode,
         name: row.name,
-        transactionValue: txVal,
+        transactionValue: row.transactionValue !== null ? row.transactionValue : '',
         qty: row.qty !== null ? row.qty : '',
         branchId: row.branchId,
         valueDate: row.valueDate,
