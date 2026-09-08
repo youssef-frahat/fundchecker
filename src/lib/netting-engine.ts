@@ -62,9 +62,8 @@ export function calculateNettingSheet(
 
     const item = map.get(groupKey)!;
     const orderSide = tx.orderSide.toUpperCase();
-    // NET-1 REMEDIATION: Use net_settle (after commissions) not order_value (gross notional)
-    // net_settle = order_value - total_commission; this is the actual cash transferred to custodian
-    const settledValue = tx.netSettle ?? tx.orderValue ?? 0;
+    // Operations Rule: Use orderValue strictly (gross notional) so quantities remain exact and integer-aligned
+    const settledValue = tx.orderValue ?? tx.netSettle ?? 0;
     if (orderSide === 'BUY') {
       item.buy = addFinancial(item.buy, settledValue, 4);
     } else if (orderSide === 'SELL') {

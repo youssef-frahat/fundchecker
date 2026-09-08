@@ -80,6 +80,7 @@ export async function parseTradingExcel(
     colQuantity: 10,
     colPrice: 11,
     colOrderValue: 12,
+    colNetSettle: 0,
     colCashAccountNo: 15,
     colIsinCode: 18,
     colOrderDate: 25,
@@ -93,6 +94,7 @@ export async function parseTradingExcel(
       const row = ws.getRow(r);
       let matchScore = 0;
       let mubasherLocked = false;
+      let orderValueLocked = false;
       const currentCols = { ...bestCols };
 
       row.eachCell((cell, colNumber) => {
@@ -179,11 +181,31 @@ export async function parseTradingExcel(
           currentCols.colPrice = colNumber;
           matchScore += 4;
         } else if (
-          text.includes('ordervalue') || text.includes('netsettle') || text.includes('amount') || text.includes('value') ||
-          text.includes('قيمة') || text.includes('قيمةالأمر') || text.includes('صافي') || text.includes('تسوية') || text.includes('مبلغ')
+          !orderValueLocked &&
+          (text === 'ordervalue' ||
+           text.includes('ordervalue') ||
+           text.includes('قيمةالأمر') ||
+           text.includes('قيمةأمر') ||
+           text === 'orderamount' ||
+           (text.includes('value') && !text.includes('net') && !text.includes('settle') && !text.includes('date')) ||
+           (text.includes('قيمة') && !text.includes('صافي') && !text.includes('تسوية') && !text.includes('دفترية')) ||
+           (text.includes('amount') && !text.includes('net') && !text.includes('settle')) ||
+           text === 'مبلغ')
         ) {
           currentCols.colOrderValue = colNumber;
-          matchScore += 4;
+          if (text === 'ordervalue' || text.includes('ordervalue') || text.includes('قيمةالأمر')) {
+            orderValueLocked = true;
+          }
+          matchScore += 5;
+        } else if (
+          text.includes('netsettle') ||
+          text.includes('netamount') ||
+          text.includes('صافيالتسوية') ||
+          text.includes('صافي') ||
+          text.includes('تسوية')
+        ) {
+          currentCols.colNetSettle = colNumber;
+          matchScore += 3;
         } else if (text.includes('isin') || text.includes('أيزن')) {
           currentCols.colIsinCode = colNumber;
           matchScore += 2;
@@ -221,6 +243,7 @@ export async function parseTradingExcel(
     colQuantity,
     colPrice,
     colOrderValue,
+    colNetSettle,
     colCashAccountNo,
     colIsinCode,
     colOrderDate,
@@ -253,7 +276,13 @@ export async function parseTradingExcel(
     const rawOrderStatus = colOrderStatus ? extractCellValue(row.getCell(colOrderStatus)) : '';
     const quantity = extractNumericValue(row.getCell(colQuantity));
     const price = extractNumericValue(row.getCell(colPrice));
-    const orderValue = extractNumericValue(row.getCell(colOrderValue));
+    const rawOrderVal = colOrderValue ? extractNumericValue(row.getCell(colOrderValue)) : 0;
+    const rawNetSettle = colNetSettle ? extractNumericValue(row.getCell(colNetSettle)) : 0;
+
+    // Operations Rule: Order Value strictly represents Gross Notional (Quantity × Price)
+    // Never let Net Settle (which has commissions deducted) contaminate Order Value
+    const orderValue = rawOrderVal > 0 ? rawOrderVal : rawNetSettle;
+    const netSettle = rawNetSettle > 0 ? rawNetSettle : orderValue;
     const isinCode = extractCellValue(row.getCell(colIsinCode));
     const orderDateRaw = extractCellValue(row.getCell(colOrderDate));
     const allocatedQuantity = colAllocatedQuantity ? extractNumericValue(row.getCell(colAllocatedQuantity)) : 0;
@@ -277,7 +306,16 @@ export async function parseTradingExcel(
     }
 
     if (requestId || effectiveSymbol !== 'UNKNOWN_SYMBOL' || orderValue > 0) {
-      const derivedQty = quantity > 0 ? quantity : (price > 0 && orderValue > 0 ? orderValue / price : (allocatedQuantity > 0 ? allocatedQuantity : 1));
+      // Calculate derived quantity from Order Value (not Net Settle) to prevent fractional anomalies
+      let derivedQty = quantity;
+      if (derivedQty <= 0 && price > 0 && orderValue > 0) {
+        const rawCalc = orderValue / price;
+        const rounded = Math.round(rawCalc);
+        derivedQty = Math.abs(rawCalc - rounded) < 0.0001 ? rounded : Math.round(rawCalc * 10000) / 10000;
+      } else if (derivedQty <= 0) {
+        derivedQty = allocatedQuantity > 0 ? allocatedQuantity : 1;
+      }
+
       const derivedPrice = price > 0 ? price : (derivedQty > 0 && orderValue > 0 ? orderValue / derivedQty : 0);
       const derivedOrderValue = orderValue > 0 ? orderValue : derivedQty * derivedPrice;
 
@@ -297,6 +335,7 @@ export async function parseTradingExcel(
         quantity: derivedQty,
         price: derivedPrice,
         orderValue: derivedOrderValue,
+        netSettle: netSettle > 0 ? netSettle : derivedOrderValue,
         isinCode,
         orderDate: orderDateRaw || new Date().toISOString(),
       });
