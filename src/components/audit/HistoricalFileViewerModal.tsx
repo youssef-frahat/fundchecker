@@ -77,20 +77,29 @@ export function HistoricalFileViewerModal({ fileRecord, onClose }: HistoricalFil
       }
 
       if (rows.length > 0) {
-        const generatedRows: import('@/lib/types').GeneratedTransactionRow[] = rows.map((r) => ({
-          transactionId: r.requestId,
-          transactionType: (r.orderSide.toLowerCase() === 'sell' ? 'sell' : 'buy') as 'buy' | 'sell',
-          transactionDate: r.orderDate ? r.orderDate.split('T')[0] : new Date().toISOString().split('T')[0],
-          externalCode: r.mubasherNo || r.symbol,
-          name: r.customerName,
-          transactionValue: r.orderValue,
-          qty: r.quantity,
-          branchId: 1,
-          valueDate: r.orderDate ? r.orderDate.split('T')[0] : new Date().toISOString().split('T')[0],
-          icPrice: r.price,
-          fees: 0,
-          productName: r.symbolDescription || r.symbol,
-        }));
+        const generatedRows: import('@/lib/types').GeneratedTransactionRow[] = rows.map((r) => {
+          let grossVal = r.orderValue;
+          if (r.quantity > 0 && r.price > 0) {
+            const calculatedGross = Math.round(r.quantity * r.price * 10000) / 10000;
+            if (!r.orderValue || Math.abs(r.orderValue - calculatedGross) > 0.01) {
+              grossVal = calculatedGross;
+            }
+          }
+          return {
+            transactionId: r.requestId,
+            transactionType: (r.orderSide.toLowerCase() === 'sell' ? 'sell' : 'buy') as 'buy' | 'sell',
+            transactionDate: r.orderDate ? r.orderDate.split('T')[0] : new Date().toISOString().split('T')[0],
+            externalCode: r.mubasherNo || r.symbol,
+            name: r.customerName,
+            transactionValue: grossVal,
+            qty: r.quantity,
+            branchId: 1,
+            valueDate: r.orderDate ? r.orderDate.split('T')[0] : new Date().toISOString().split('T')[0],
+            icPrice: r.price,
+            fees: 0,
+            productName: r.symbolDescription || r.symbol,
+          };
+        });
 
         const blob = await exportTransactionSheetsPerProduct(generatedRows);
         const url = URL.createObjectURL(blob);

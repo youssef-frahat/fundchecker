@@ -105,5 +105,19 @@ describe('Settlement Rule Engine (FIN-01 / Core Logic)', () => {
     assert.equal(res.transactionValue, 30000, 'Transaction Value must strictly be 30,000 (Order Value), not 30,162.25 (Net Settle)');
     assert.notEqual(res.transactionValue, tradeWithCommissions.netSettle);
   });
+
+  it('Trade Sheet: Contaminated orderValue (e.g. Net Settle passed in) is automatically healed to Quantity x Price', () => {
+    const contaminatedTrade: RawTransactionRow = {
+      ...baseRow,
+      quantity: 62,
+      price: 24.1298,
+      orderValue: 1497.82, // Contaminated with Net Settle fees
+      netSettle: 1497.82,
+    };
+    const res = applyFundRules(contaminatedTrade, 'T0', mockFundRules, '2026-08-30');
+    const expected = Math.round(62 * 24.1298 * 10000) / 10000;
+    assert.equal(res.transactionValue, expected, `Transaction Value must be healed to ${expected} (Quantity x Price), not 1497.82`);
+    assert.notEqual(res.transactionValue, 1497.82);
+  });
 });
 

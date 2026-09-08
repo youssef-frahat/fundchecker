@@ -47,20 +47,24 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
     );
   });
 
+  const getRowGrossValue = (r: GeneratedTransactionRow): number => {
+    if (r.transactionValue !== null) {
+      if (r.qty && r.icPrice && Math.abs(r.transactionValue - (r.qty * r.icPrice)) > 0.01) {
+        return Math.round(r.qty * r.icPrice * 10000) / 10000;
+      }
+      return r.transactionValue;
+    }
+    return showCompleteData && r.qty && r.icPrice ? Math.round(r.qty * r.icPrice * 10000) / 10000 : 0;
+  };
+
   // Calculate Fund KPIs for selected view
   const activeBuyTotal = displayedRows
     .filter((r) => r.transactionType?.toLowerCase() === 'buy')
-    .reduce((acc, r) => {
-      const val = r.transactionValue !== null ? r.transactionValue : (showCompleteData && r.qty && r.icPrice ? r.qty * r.icPrice : 0);
-      return acc + val;
-    }, 0);
+    .reduce((acc, r) => acc + getRowGrossValue(r), 0);
 
   const activeSellTotal = displayedRows
     .filter((r) => r.transactionType?.toLowerCase() === 'sell')
-    .reduce((acc, r) => {
-      const val = r.transactionValue !== null ? r.transactionValue : (showCompleteData && r.qty && r.icPrice ? r.qty * r.icPrice : 0);
-      return acc + val;
-    }, 0);
+    .reduce((acc, r) => acc + getRowGrossValue(r), 0);
 
   const activeNetBalance = activeSellTotal - activeBuyTotal;
 
@@ -293,18 +297,20 @@ export function TransactionReportTable({ rows }: TransactionReportTableProps) {
               displayedRows.map((row, idx) => {
                 const isT0 = isT0Row(row);
                 // For T0 funds OR if complete data mode is active, display full values
-                const displayValue =
-                  row.transactionValue !== null
-                    ? row.transactionValue
-                    : showCompleteData && row.qty && row.icPrice
-                    ? row.qty * row.icPrice
-                    : null;
+                let displayValue = row.transactionValue;
+                if (displayValue !== null) {
+                  if (row.qty && row.icPrice && Math.abs(displayValue - (row.qty * row.icPrice)) > 0.01) {
+                    displayValue = Math.round(row.qty * row.icPrice * 10000) / 10000;
+                  }
+                } else if (showCompleteData && row.qty && row.icPrice) {
+                  displayValue = Math.round(row.qty * row.icPrice * 10000) / 10000;
+                }
 
                 const displayQty =
                   row.qty !== null
                     ? row.qty
-                    : showCompleteData && row.transactionValue && row.icPrice
-                    ? row.transactionValue / row.icPrice
+                    : showCompleteData && displayValue !== null && row.icPrice
+                    ? Math.round((displayValue / row.icPrice) * 10000) / 10000
                     : null;
 
                 return (

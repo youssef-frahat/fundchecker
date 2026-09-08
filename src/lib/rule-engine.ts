@@ -48,7 +48,19 @@ export function applyFundRules(
     }
   }
 
-  const transactionValue = matchingRule.isTransactionValueVisible ? rawRow.orderValue : null;
+  // Operations Financial Guard: Transaction Value strictly represents Gross Order Value (Column L = Quantity x Price)
+  // Never permit Net Settle (Column N = Gross + Commission) into Transaction Value
+  let transactionValue: number | null = null;
+  if (matchingRule.isTransactionValueVisible) {
+    if (rawRow.quantity > 0 && rawRow.price > 0) {
+      const calculatedGross = Math.round(rawRow.quantity * rawRow.price * 10000) / 10000;
+      transactionValue = rawRow.orderValue > 0 && Math.abs(rawRow.orderValue - calculatedGross) <= 0.01
+        ? rawRow.orderValue
+        : calculatedGross;
+    } else {
+      transactionValue = rawRow.orderValue;
+    }
+  }
   const qty = matchingRule.isQuantityVisible ? rawRow.quantity : null;
 
   return {

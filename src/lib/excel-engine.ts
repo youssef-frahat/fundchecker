@@ -291,16 +291,9 @@ export async function parseTradingExcel(
     // Operations Rule: Order Value strictly represents Gross Notional (Quantity × Price)
     // Never let Net Settle (which has commissions deducted) contaminate Order Value
     const calculatedGross = quantity > 0 && price > 0 ? Math.round(quantity * price * 10000) / 10000 : 0;
-    let orderValue = rawOrderVal > 0 ? rawOrderVal : (calculatedGross > 0 ? calculatedGross : rawNetSettle);
-    if (
-      calculatedGross > 0 &&
-      rawOrderVal > 0 &&
-      rawNetSettle > 0 &&
-      Math.abs(rawOrderVal - rawNetSettle) < 0.001 &&
-      Math.abs(calculatedGross - rawOrderVal) > 0.01
-    ) {
-      orderValue = calculatedGross;
-    }
+    let orderValue = calculatedGross > 0
+      ? (rawOrderVal > 0 && Math.abs(rawOrderVal - calculatedGross) <= 0.01 ? rawOrderVal : calculatedGross)
+      : (rawOrderVal > 0 ? rawOrderVal : rawNetSettle);
     const netSettle = rawNetSettle > 0 ? rawNetSettle : orderValue;
     const isinCode = extractCellValue(row.getCell(colIsinCode));
     const orderDateRaw = extractCellValue(row.getCell(colOrderDate));
@@ -410,13 +403,22 @@ export async function exportSingleFundTransactionSheet(
   headerRow.eachCell((cell) => { cell.border = thinBorder; });
 
   for (const item of fundRows) {
-    const val = item.transactionValue !== null
-      ? item.transactionValue
-      : (forceCompleteData && item.qty !== null && item.icPrice ? item.qty * item.icPrice : '');
+    let val: number | string = '';
+    if (item.transactionValue !== null) {
+      val = item.transactionValue;
+      if (item.qty !== null && item.qty > 0 && item.icPrice && item.icPrice > 0) {
+        const expectedGross = Math.round(item.qty * item.icPrice * 10000) / 10000;
+        if (Math.abs(item.transactionValue - expectedGross) > 0.01) {
+          val = expectedGross;
+        }
+      }
+    } else if (forceCompleteData && item.qty !== null && item.icPrice) {
+      val = Math.round(item.qty * item.icPrice * 10000) / 10000;
+    }
 
     const quantity = item.qty !== null
       ? item.qty
-      : (forceCompleteData && item.transactionValue !== null && item.icPrice ? item.transactionValue / item.icPrice : '');
+      : (forceCompleteData && typeof val === 'number' && item.icPrice ? Math.round((val / item.icPrice) * 10000) / 10000 : '');
 
     const addedRow = ws.addRow({
       transactionId: item.transactionId,
@@ -510,13 +512,22 @@ export async function exportTransactionSheetsPerProduct(
 
     const prodRows = productMap.get(prodKey)!;
     for (const item of prodRows) {
-      const val = item.transactionValue !== null
-        ? item.transactionValue
-        : (forceCompleteData && item.qty !== null && item.icPrice ? item.qty * item.icPrice : '');
+      let val: number | string = '';
+      if (item.transactionValue !== null) {
+        val = item.transactionValue;
+        if (item.qty !== null && item.qty > 0 && item.icPrice && item.icPrice > 0) {
+          const expectedGross = Math.round(item.qty * item.icPrice * 10000) / 10000;
+          if (Math.abs(item.transactionValue - expectedGross) > 0.01) {
+            val = expectedGross;
+          }
+        }
+      } else if (forceCompleteData && item.qty !== null && item.icPrice) {
+        val = Math.round(item.qty * item.icPrice * 10000) / 10000;
+      }
 
       const quantity = item.qty !== null
         ? item.qty
-        : (forceCompleteData && item.transactionValue !== null && item.icPrice ? item.transactionValue / item.icPrice : '');
+        : (forceCompleteData && typeof val === 'number' && item.icPrice ? Math.round((val / item.icPrice) * 10000) / 10000 : '');
 
       const addedRow = ws.addRow({
         transactionId: item.transactionId,
@@ -619,13 +630,22 @@ export async function exportAllFundsAsZip(
     headerRow.eachCell((cell) => { cell.border = thinBorder; });
 
     for (const item of fundRows) {
-      const val = item.transactionValue !== null
-        ? item.transactionValue
-        : (forceCompleteData && item.qty !== null && item.icPrice ? item.qty * item.icPrice : '');
+      let val: number | string = '';
+      if (item.transactionValue !== null) {
+        val = item.transactionValue;
+        if (item.qty !== null && item.qty > 0 && item.icPrice && item.icPrice > 0) {
+          const expectedGross = Math.round(item.qty * item.icPrice * 10000) / 10000;
+          if (Math.abs(item.transactionValue - expectedGross) > 0.01) {
+            val = expectedGross;
+          }
+        }
+      } else if (forceCompleteData && item.qty !== null && item.icPrice) {
+        val = Math.round(item.qty * item.icPrice * 10000) / 10000;
+      }
 
       const quantity = item.qty !== null
         ? item.qty
-        : (forceCompleteData && item.transactionValue !== null && item.icPrice ? item.transactionValue / item.icPrice : '');
+        : (forceCompleteData && typeof val === 'number' && item.icPrice ? Math.round((val / item.icPrice) * 10000) / 10000 : '');
 
       const addedRow = ws.addRow({
         transactionId: item.transactionId,
