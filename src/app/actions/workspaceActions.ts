@@ -26,6 +26,24 @@ export async function fetchWorkspaceDataAction(): Promise<{
   latestBatch: import('@/lib/types').TransferSheetBatch | null;
   allBatches: import('@/lib/repositories/transferRepository').TransferBatchSummary[];
 }> {
+  // SEC-02 REMEDIATION: Enforce strict authentication before returning any workspace data
+  const caller = await getAuthenticatedServerUser();
+  if (!caller) {
+    return {
+      success: false,
+      dbError: '401 Unauthorized: Valid authenticated session required to access workspace data.',
+      refData: [],
+      fundRules: [],
+      exceptions: [],
+      auditLogs: [],
+      checklists: [],
+      users: [],
+      uploadedFiles: [],
+      latestBatch: null,
+      allBatches: [],
+    };
+  }
+
   // Fetch non-critical data first (these return [] on empty, not throw)
   const { fetchAllTransferBatches } = await import('@/lib/repositories/transferRepository');
   const [exceptions, auditLogs, checklists, users, latestBatch, uploadedFiles, allBatches] = await Promise.all([
@@ -195,6 +213,10 @@ export async function resetDailyChecklistShiftAction() {
 }
 
 export async function fetchAuditLogsAction(limit: number = 50, cursor?: string) {
+  const caller = await getAuthenticatedServerUser();
+  if (!caller) {
+    throw new Error('401 Unauthorized: Authentication required to access audit logs.');
+  }
   const { fetchAuditLogsPaginated } = await import('@/lib/repositories/auditRepository');
   return await fetchAuditLogsPaginated(limit, cursor);
 }
@@ -212,6 +234,11 @@ export async function fetchHistoricalFileRowsAction(
   error?: string;
 }> {
   try {
+    const caller = await getAuthenticatedServerUser();
+    if (!caller) {
+      return { success: false, error: '401 Unauthorized: Authentication required to access historical transaction data.' };
+    }
+
     const { getDbClient } = await import('@/lib/db-client');
     const supabase = await getDbClient();
 

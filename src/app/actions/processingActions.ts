@@ -21,6 +21,10 @@ export async function processTradeFileAction(
       return { success: false, error: '401 Unauthorized: Valid authenticated session required.' };
     }
 
+    if (currentUser.role === 'AUDITOR') {
+      return { success: false, error: '403 Forbidden: Auditors have read-only permissions and cannot process trade files.' };
+    }
+
     if (!fileName || !fileHashSha256 || !rawRows || rawRows.length === 0) {
       return { success: false, error: 'Invalid input file data or empty rows.' };
     }

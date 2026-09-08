@@ -21,6 +21,10 @@ import { calculateFinalTransfer, subFinancial } from '@/lib/services/financialMa
 
 export async function getLatestTransferBatchAction(): Promise<TransferSheetBatch | null> {
   try {
+    const currentUser = await getAuthenticatedServerUser();
+    if (!currentUser) {
+      return null;
+    }
     return await fetchLatestTransferBatch();
   } catch {
     return null;
@@ -44,6 +48,10 @@ export async function uploadAllocationFileAction(
     const currentUser = await getAuthenticatedServerUser();
     if (!currentUser) {
       return { success: false, error: '401 Unauthorized: Valid authenticated session required.' };
+    }
+
+    if (currentUser.role === 'AUDITOR') {
+      return { success: false, error: '403 Forbidden: Auditors have read-only permissions and cannot ingest allocation files.' };
     }
 
     if (!fileName || !fileHashSha256 || !rawRows || rawRows.length === 0) {
@@ -148,6 +156,10 @@ export async function adjustTransferLineAction(
       return { success: false, error: '401 Unauthorized.' };
     }
 
+    if (currentUser.role === 'AUDITOR') {
+      return { success: false, error: '403 Forbidden: Auditors have read-only permissions and cannot adjust transfer lines.' };
+    }
+
     if (!reason || reason.trim().length < 1) {
       return { success: false, error: 'Mandatory justification reason is required for audit trail.' };
     }
@@ -240,6 +252,10 @@ export async function submitTransferBatchAction(
     const currentUser = await getAuthenticatedServerUser();
     if (!currentUser) return { success: false, error: '401 Unauthorized.' };
 
+    if (currentUser.role === 'AUDITOR') {
+      return { success: false, error: '403 Forbidden: Auditors have read-only permissions and cannot submit transfer batches.' };
+    }
+
     const headersList = await headers();
     const clientIp =
       headersList.get('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -290,15 +306,21 @@ export async function reviewTransferBatchAction(
     }
 
     // FOUR-EYES PRINCIPLE: Submitter/Maker cannot approve own work
-    const isSameMaker =
-      (batch.maker_id && batch.maker_id === currentUser.id) ||
-      (batch.maker_name && batch.maker_name === currentUser.fullName) ||
-      (batch.maker_id && batch.maker_id === currentUser.email);
+    // Strictly enforced by unique User ID
+    const isSameMaker = Boolean(batch.maker_id && batch.maker_id === currentUser.id);
 
     if (decision === 'APPROVE' && isSameMaker) {
       return {
         success: false,
-        error: `Four-Eyes Principle Violation: Maker cannot approve their own submitted transfer sheet batch (${batch.maker_name || currentUser.fullName}). A different checker must review.`,
+        error: `Four-Eyes Principle Violation: Maker cannot approve their own submitted transfer sheet batch. A different checker must review.`,
+      };
+    }
+
+    // Role-Based Authorization: Approval requires OPERATIONS_CHECKER or SUPER_ADMIN
+    if (decision === 'APPROVE' && currentUser.role !== 'OPERATIONS_CHECKER' && currentUser.role !== 'SUPER_ADMIN') {
+      return {
+        success: false,
+        error: `403 Forbidden: Only an Operations Checker or Super Admin may approve and lock settlement transfer sheets. Current role: ${currentUser.role}`,
       };
     }
 

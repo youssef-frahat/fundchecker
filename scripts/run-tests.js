@@ -5,7 +5,25 @@ const ts = require('typescript');
 const fs = require('fs');
 const path = require('path');
 
-// 1. Register TypeScript loader
+// 1. Load .env.local if present
+const envLocalPath = path.join(__dirname, '..', '.env.local');
+if (fs.existsSync(envLocalPath)) {
+  const envContent = fs.readFileSync(envLocalPath, 'utf8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx > 0) {
+      const key = trimmed.slice(0, eqIdx).trim();
+      const val = trimmed.slice(eqIdx + 1).trim();
+      if (!process.env[key]) {
+        process.env[key] = val;
+      }
+    }
+  }
+}
+
+// 2. Register TypeScript loader
 require.extensions['.ts'] = function (module, filename) {
   const source = fs.readFileSync(filename, 'utf8');
   const compiled = ts.transpileModule(source, {

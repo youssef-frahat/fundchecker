@@ -113,6 +113,14 @@ export async function approveTransferSheetAction(
       };
     }
 
+    // Role-Based Authorization: Approval requires OPERATIONS_CHECKER or SUPER_ADMIN
+    if (currentUser.role !== 'OPERATIONS_CHECKER' && currentUser.role !== 'SUPER_ADMIN') {
+      return {
+        success: false,
+        error: `403 Forbidden: Only an Operations Checker or Super Admin may approve transfer sheets. Current role: ${currentUser.role}`,
+      };
+    }
+
     // Atomic update with DB-level guard against TOCTOU race conditions
     const { data, error } = await supabase
       .from('transfer_sheets')

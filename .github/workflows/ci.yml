@@ -29,9 +29,16 @@ jobs:
 
       - name: Run Enterprise Automated Tests
         run: npm test
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://mock-ci-project.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: mock-ci-anon-key-with-sufficient-length-for-validation
 
       - name: Verify TypeScript
         run: npx tsc --noEmit
 
       - name: Build Next.js
         run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://mock-ci-project.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: mock-ci-anon-key-with-sufficient-length-for-validation
+

@@ -3,6 +3,7 @@
 
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { getValidatedEnv } from './lib/env';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -19,12 +20,16 @@ export async function middleware(request: NextRequest) {
     'Permissions-Policy',
     'camera=(), microphone=(), geolocation=(), interest-cohort=()'
   );
+  response.headers.set(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none';"
+  );
+
+  const { supabaseUrl, supabaseAnonKey } = getValidatedEnv();
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xclvydhlmxmzcwwprwfk.supabase.co',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-      'sb_publishable_Q7EvjsDluhNdvsdyTavCXA_uzBQL_mZ',
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {

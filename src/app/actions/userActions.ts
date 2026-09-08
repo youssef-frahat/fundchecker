@@ -8,13 +8,10 @@ import { updateUserStatusInDb, updateUserRoleInDb, fetchUsersFromDb } from '@/li
 import { insertAuditLog } from '@/lib/repositories/auditRepository';
 import { User, UserRole } from '@/lib/types';
 import { getDbClient } from '@/lib/db-client';
+import { getValidatedEnv } from '@/lib/env';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xclvydhlmxmzcwwprwfk.supabase.co';
-const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  'sb_publishable_Q7EvjsDluhNdvsdyTavCXA_uzBQL_mZ';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const { supabaseUrl: SUPABASE_URL, supabaseAnonKey: SUPABASE_ANON_KEY, serviceRoleKey: SERVICE_ROLE_KEY } = getValidatedEnv();
+
 
 /**
  * Creates a new user with real Supabase Auth credentials, synchronizes profile in public.users,
@@ -102,7 +99,7 @@ export async function createUserAction(formData: {
 
     // 3. Write Immutable Audit Record
     await insertAuditLog({
-      id: `audit-${Date.now()}`,
+      id: crypto.randomUUID(),
       userId: caller.id,
       userName: caller.fullName,
       action: 'CREATE_USER',
@@ -114,7 +111,7 @@ export async function createUserAction(formData: {
     });
 
     const createdUser: User = {
-      id: newAuthUserId || `user-${Date.now()}`,
+      id: newAuthUserId || crypto.randomUUID(),
       email: trimmedEmail,
       fullName: trimmedName,
       role,
@@ -154,7 +151,7 @@ export async function toggleUserStatusAction(
 
     // Write Immutable Audit Record
     await insertAuditLog({
-      id: `audit-${Date.now()}`,
+      id: crypto.randomUUID(),
       userId: caller.id,
       userName: caller.fullName,
       action: 'TOGGLE_USER_STATUS',
@@ -200,7 +197,7 @@ export async function resetUserPasswordAction(
 
     // Write Immutable Audit Record
     await insertAuditLog({
-      id: `audit-${Date.now()}`,
+      id: crypto.randomUUID(),
       userId: caller.id,
       userName: caller.fullName,
       action: 'REQUEST_PASSWORD_RESET',
@@ -237,7 +234,7 @@ export async function updateUserRoleAction(
 
     // Write Immutable Audit Record
     await insertAuditLog({
-      id: `audit-${Date.now()}`,
+      id: crypto.randomUUID(),
       userId: caller.id,
       userName: caller.fullName,
       action: 'UPDATE_USER_ROLE',

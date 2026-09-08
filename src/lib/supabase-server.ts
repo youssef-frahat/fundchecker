@@ -3,15 +3,15 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { UserRole } from './types';
+import { getValidatedEnv } from './env';
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
+  const { supabaseUrl, supabaseAnonKey } = getValidatedEnv();
 
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xclvydhlmxmzcwwprwfk.supabase.co',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-      'sb_publishable_Q7EvjsDluhNdvsdyTavCXA_uzBQL_mZ',
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
