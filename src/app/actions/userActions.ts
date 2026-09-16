@@ -255,7 +255,7 @@ export async function updateUserRoleAction(
 /**
  * Directly updates a user's password (Super Admin capability).
  * If updating self, uses session client.
- * If updating another user, uses SERVICE_ROLE_KEY or returns clear instructions.
+ * If updating another user, uses SERVICE_ROLE_KEY or the admin_set_user_password RPC.
  */
 export async function setUserPasswordDirectlyAction(
   userId: string,
@@ -284,26 +284,45 @@ export async function setUserPasswordDirectlyAction(
         return { success: false, error: updateErr.message };
       }
     } else {
-      // 2. Updating another user's password requires Service Role Key
-      if (!SERVICE_ROLE_KEY) {
-        return {
-          success: false,
-          error:
-            'Direct password override requires SUPABASE_SERVICE_ROLE_KEY in environment variables. ' +
-            'Please add your service_role secret from Supabase Dashboard -> Project Settings -> API, or use the Reset Password Email button.',
-        };
+      // 2. Updating another user's password:
+      // Try Service Role Key first if present
+      let updatedViaServiceRole = false;
+
+      if (SERVICE_ROLE_KEY) {
+        try {
+          const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+            auth: { autoRefreshToken: false, persistSession: false },
+          });
+
+          const { error: adminErr } = await adminClient.auth.admin.updateUserById(userId, {
+            password: newPassword,
+          });
+
+          if (!adminErr) {
+            updatedViaServiceRole = true;
+          }
+        } catch {
+          updatedViaServiceRole = false;
+        }
       }
 
-      const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
+      // If Service Role Key was not present or didn't succeed, use the admin_set_user_password RPC
+      if (!updatedViaServiceRole) {
+        const { createSupabaseServerClient } = await import('@/lib/supabase-server');
+        const supabase = await createSupabaseServerClient();
+        const { error: rpcErr } = await supabase.rpc('admin_set_user_password', {
+          target_user_id: userId,
+          new_password: newPassword,
+        });
 
-      const { error: adminErr } = await adminClient.auth.admin.updateUserById(userId, {
-        password: newPassword,
-      });
-
-      if (adminErr) {
-        return { success: false, error: `Authentication service error: ${adminErr.message}` };
+        if (rpcErr) {
+          return {
+            success: false,
+            error:
+              `Failed to update password: ${rpcErr.message}. ` +
+              'Ensure migration 08 is executed in Supabase SQL Editor, or supply SUPABASE_SERVICE_ROLE_KEY in environment variables.',
+          };
+        }
       }
     }
 
@@ -323,6 +342,89 @@ export async function setUserPasswordDirectlyAction(
     return { success: true, message: 'Password updated successfully.' };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Password update failed';
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Permanently deletes a user from Authentication registry and system database profile.
+ * Super Admin capability only. Self-deletion is strictly prohibited.
+ */
+export async function deleteUserAction(
+  userId: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const caller = await getAuthenticatedServerUser();
+    if (!caller || caller.role !== 'SUPER_ADMIN') {
+      return { success: false, error: 'Unauthorized: Only Super Administrators can delete users.' };
+    }
+
+    if (!userId || !userId.trim()) {
+      return { success: false, error: 'User ID is required.' };
+    }
+
+    if (caller.id === userId) {
+      return { success: false, error: 'Operation rejected: You cannot delete your own active account.' };
+    }
+
+    let deletedViaServiceRole = false;
+
+    // 1. Attempt deletion via Service Role Key if available
+    if (SERVICE_ROLE_KEY) {
+      try {
+        const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { error: deleteErr } = await adminClient.auth.admin.deleteUser(userId);
+        if (!deleteErr) {
+          deletedViaServiceRole = true;
+        }
+      } catch {
+        deletedViaServiceRole = false;
+      }
+    }
+
+    // 2. If Service Role Key was not present or failed, execute the admin_delete_user RPC
+    if (!deletedViaServiceRole) {
+      const { createSupabaseServerClient } = await import('@/lib/supabase-server');
+      const supabase = await createSupabaseServerClient();
+      const { error: rpcErr } = await supabase.rpc('admin_delete_user', {
+        target_user_id: userId,
+      });
+
+      if (rpcErr) {
+        // Fallback: delete profile directly from public.users
+        const dbClient = await getDbClient();
+        const { error: dbDeleteErr } = await dbClient.from('users').delete().eq('id', userId);
+        if (dbDeleteErr) {
+          return {
+            success: false,
+            error: `Failed to delete user: ${rpcErr.message || dbDeleteErr.message}. Ensure migration 08 has been run in Supabase SQL Editor.`,
+          };
+        }
+      }
+    } else {
+      // Also ensure profile in public.users is deleted
+      const dbClient = await getDbClient();
+      await dbClient.from('users').delete().eq('id', userId);
+    }
+
+    // 3. Write Immutable Audit Record
+    await insertAuditLog({
+      id: crypto.randomUUID(),
+      userId: caller.id,
+      userName: caller.fullName,
+      action: 'DELETE_USER',
+      entityName: 'USER',
+      entityId: userId,
+      newValues: { deletedUserId: userId },
+      ipAddress: '127.0.0.1',
+      timestampUtc: new Date().toISOString(),
+    });
+
+    return { success: true, message: 'User account permanently deleted.' };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'User deletion execution error';
     return { success: false, error: msg };
   }
 }

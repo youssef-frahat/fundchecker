@@ -48,6 +48,7 @@ import {
   toggleUserStatusAction,
   resetUserPasswordAction,
   setUserPasswordDirectlyAction,
+  deleteUserAction,
 } from '@/app/actions/userActions';
 import { getCurrentSessionUserAction, logoutUserAction } from '@/app/actions/authActions';
 import { applyFundRules } from '@/lib/rule-engine';
@@ -453,6 +454,21 @@ export default function InvestmentPlatformPage() {
     return await setUserPasswordDirectlyAction(userId, newPass);
   };
 
+  const handleDeleteUser = async (
+    userId: string
+  ): Promise<{ success: boolean; message?: string; error?: string }> => {
+    const res = await deleteUserAction(userId);
+    if (!res.success) {
+      return { success: false, error: res.error };
+    }
+    const wsData = await fetchWorkspaceDataAction();
+    if (wsData.success && wsData.users) {
+      setUsers(wsData.users);
+    }
+    await refreshAuditLogs();
+    return { success: true, message: res.message };
+  };
+
   if (isVerifyingSession) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4 text-slate-700">
@@ -644,6 +660,7 @@ export default function InvestmentPlatformPage() {
               onToggleUserStatus={handleToggleUserStatus}
               onResetPassword={handleResetPassword}
               onSetUserPassword={handleSetUserPassword}
+              onDeleteUser={handleDeleteUser}
             />
             <ReferenceDataAdmin
               referenceDataList={referenceDataList}

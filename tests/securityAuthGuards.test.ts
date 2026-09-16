@@ -214,7 +214,8 @@ describe('Super Admin Password Management Guard (SEC-08)', () => {
     userId: string,
     password: string,
     hasServiceKey: boolean,
-    callerId: string
+    callerId: string,
+    hasRpcFallback: boolean = false
   ) => {
     if (callerRole !== 'SUPER_ADMIN') {
       return { success: false, error: 'Unauthorized: Only Super Administrators can set user passwords.' };
@@ -225,7 +226,7 @@ describe('Super Admin Password Management Guard (SEC-08)', () => {
     if (!password || password.length < 8) {
       return { success: false, error: 'Password must be at least 8 characters long.' };
     }
-    if (callerId !== userId && !hasServiceKey) {
+    if (callerId !== userId && !hasServiceKey && !hasRpcFallback) {
       return {
         success: false,
         error: 'Direct password override requires SUPABASE_SERVICE_ROLE_KEY in environment variables.',
@@ -252,8 +253,8 @@ describe('Super Admin Password Management Guard (SEC-08)', () => {
     assert.ok(res.error?.includes('User ID is required'));
   });
 
-  it('reports requirement for SERVICE_ROLE_KEY when updating another user without key', () => {
-    const res = validatePasswordOverride('SUPER_ADMIN', 'target-user-99', 'StrongPassword123!', false, 'admin-1');
+  it('reports requirement for SERVICE_ROLE_KEY when updating another user without key and without RPC', () => {
+    const res = validatePasswordOverride('SUPER_ADMIN', 'target-user-99', 'StrongPassword123!', false, 'admin-1', false);
     assert.equal(res.success, false);
     assert.ok(res.error?.includes('SUPABASE_SERVICE_ROLE_KEY'));
   });
@@ -268,6 +269,55 @@ describe('Super Admin Password Management Guard (SEC-08)', () => {
     const res = validatePasswordOverride('SUPER_ADMIN', 'target-user-99', 'StrongPassword123!', true, 'admin-1');
     assert.equal(res.success, true);
     assert.ok(res.message?.includes('Password updated successfully'));
+  });
+
+  it('allows administrative password override via database RPC when service key is absent', () => {
+    const res = validatePasswordOverride('SUPER_ADMIN', 'target-user-99', 'StrongPassword123!', false, 'admin-1', true);
+    assert.equal(res.success, true);
+    assert.ok(res.message?.includes('Password updated successfully'));
+  });
+});
+
+describe('Super Admin User Deletion Guard (SEC-09)', () => {
+  const validateUserDeletion = (
+    callerRole: string,
+    callerId: string,
+    targetUserId: string
+  ) => {
+    if (callerRole !== 'SUPER_ADMIN') {
+      return { success: false, error: 'Unauthorized: Only Super Administrators can delete users.' };
+    }
+    if (!targetUserId || !targetUserId.trim()) {
+      return { success: false, error: 'User ID is required.' };
+    }
+    if (callerId === targetUserId) {
+      return { success: false, error: 'Operation rejected: You cannot delete your own active account.' };
+    }
+    return { success: true, message: 'User account permanently deleted.' };
+  };
+
+  it('rejects user deletion if caller is not SUPER_ADMIN', () => {
+    const res = validateUserDeletion('OPERATIONS_USER', 'user-op', 'user-target');
+    assert.equal(res.success, false);
+    assert.ok(res.error?.includes('Unauthorized: Only Super Administrators'));
+  });
+
+  it('rejects user self-deletion', () => {
+    const res = validateUserDeletion('SUPER_ADMIN', 'admin-id-1', 'admin-id-1');
+    assert.equal(res.success, false);
+    assert.ok(res.error?.includes('cannot delete your own active account'));
+  });
+
+  it('rejects missing or empty target user ID', () => {
+    const res = validateUserDeletion('SUPER_ADMIN', 'admin-id-1', '   ');
+    assert.equal(res.success, false);
+    assert.ok(res.error?.includes('User ID is required'));
+  });
+
+  it('allows valid user deletion when caller is SUPER_ADMIN targeting another user', () => {
+    const res = validateUserDeletion('SUPER_ADMIN', 'admin-id-1', 'target-user-id-99');
+    assert.equal(res.success, true);
+    assert.ok(res.message?.includes('permanently deleted'));
   });
 });
 

@@ -3,7 +3,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Users, UserPlus, Shield, User, Search, KeyRound, AlertTriangle, CheckCircle2, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
+import { Users, UserPlus, Shield, User, Search, KeyRound, AlertTriangle, CheckCircle2, Loader2, Lock, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { User as UserType, UserRole } from '@/lib/types';
 
 interface UserManagementAdminProps {
@@ -17,6 +17,7 @@ interface UserManagementAdminProps {
   onToggleUserStatus: (id: string, newStatus: 'ACTIVE' | 'INACTIVE') => Promise<{ success: boolean; error?: string }>;
   onResetPassword?: (email: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   onSetUserPassword?: (userId: string, newPassword: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  onDeleteUser?: (userId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
 export function UserManagementAdmin({
@@ -25,6 +26,7 @@ export function UserManagementAdmin({
   onToggleUserStatus,
   onResetPassword,
   onSetUserPassword,
+  onDeleteUser,
 }: UserManagementAdminProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -46,6 +48,12 @@ export function UserManagementAdmin({
   const [showPasswordText, setShowPasswordText] = useState(false);
   const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  // Delete User State
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [targetUserForDelete, setTargetUserForDelete] = useState<UserType | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [deleteModalError, setDeleteModalError] = useState<string | null>(null);
 
   const filteredUsers = users.filter(
     (u) =>
@@ -173,6 +181,29 @@ export function UserManagementAdmin({
       setPasswordModalError(err instanceof Error ? err.message : 'Password update error');
     } finally {
       setIsUpdatingPassword(false);
+    }
+  };
+
+  const handleDeleteUserConfirm = async () => {
+    if (!targetUserForDelete || !onDeleteUser) return;
+    setIsDeletingUser(true);
+    setDeleteModalError(null);
+    try {
+      const res = await onDeleteUser(targetUserForDelete.id);
+      if (!res.success) {
+        setDeleteModalError(res.error || 'Failed to delete user.');
+      } else {
+        setBannerNotice({
+          type: 'success',
+          message: res.message || `User ${targetUserForDelete.fullName} was permanently deleted.`,
+        });
+        setShowDeleteModal(false);
+        setTargetUserForDelete(null);
+      }
+    } catch (err) {
+      setDeleteModalError(err instanceof Error ? err.message : 'User deletion error');
+    } finally {
+      setIsDeletingUser(false);
     }
   };
 
@@ -344,6 +375,21 @@ export function UserManagementAdmin({
                         >
                           <Lock className="w-3 h-3 text-emerald-600" />
                           Set Password
+                        </button>
+                      )}
+
+                      {onDeleteUser && (
+                        <button
+                          onClick={() => {
+                            setTargetUserForDelete(user);
+                            setDeleteModalError(null);
+                            setShowDeleteModal(true);
+                          }}
+                          title="Permanently Delete User"
+                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3 text-rose-600" />
+                          Delete
                         </button>
                       )}
                     </div>
@@ -523,6 +569,75 @@ export function UserManagementAdmin({
               >
                 {isUpdatingPassword && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {isUpdatingPassword ? 'Saving Password...' : 'Save New Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {showDeleteModal && targetUserForDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-700 border-b border-slate-100 pb-3">
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200 shadow-sm">
+                <Trash2 className="w-6 h-6 text-rose-600" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-base text-slate-900">Delete System User</h4>
+                <p className="text-xs text-rose-600 font-semibold">Permanent &amp; Irreversible Action</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-rose-50/60 rounded-2xl border border-rose-200 text-xs space-y-2">
+              <p className="text-slate-800 font-semibold">
+                Are you sure you want to permanently delete this user account?
+              </p>
+              <div className="bg-white p-3 rounded-xl border border-rose-100 space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Full Name:</span>
+                  <span className="font-bold text-slate-900">{targetUserForDelete.fullName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Email:</span>
+                  <span className="font-mono font-semibold text-slate-800">{targetUserForDelete.email}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Role:</span>
+                  <span className="font-semibold text-slate-800">{targetUserForDelete.role}</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-600">
+                This will delete the user identity from Supabase Auth and database profiles. Historical audit records and past batch approvals will remain safely preserved.
+              </p>
+            </div>
+
+            {deleteModalError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{deleteModalError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                disabled={isDeletingUser}
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setTargetUserForDelete(null);
+                  setDeleteModalError(null);
+                }}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={isDeletingUser}
+                onClick={handleDeleteUserConfirm}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/20 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingUser && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isDeletingUser ? 'Deleting User...' : 'Yes, Permanently Delete'}
               </button>
             </div>
           </div>
