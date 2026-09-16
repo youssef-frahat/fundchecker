@@ -163,49 +163,49 @@ export default function InvestmentPlatformPage() {
     onRefreshAuditLogs: refreshAuditLogs,
   });
 
-  useEffect(() => {
-    async function loadDbData() {
-      try {
-        if (typeof window !== 'undefined') {
-          const savedTab = localStorage.getItem('investment_active_tab');
-          if (savedTab) setActiveTab(savedTab);
-        }
-
-        const [{ user: sessionUser }, wsResult, initialAuditResult] = await Promise.all([
-          getCurrentSessionUserAction(),
-          fetchWorkspaceDataAction(),
-          fetchAuditLogsAction(50).catch(() => ({ logs: [], hasMore: false, nextCursor: undefined as string | undefined })),
-        ]);
-
-        if (sessionUser) {
-          setCurrentUser(sessionUser);
-        }
-        if (wsResult) {
-          if (wsResult.dbError) {
-            setDbSetupError(wsResult.dbError);
-          }
-          setReferenceDataList(wsResult.refData || []);
-          setFundRules(wsResult.fundRules || []);
-          exceptionWs.setExceptions(wsResult.exceptions || []);
-          checklistWs.setChecklists(wsResult.checklists || []);
-          setUsers(wsResult.users || []);
-          setUploadedFiles(wsResult.uploadedFiles || []);
-          transferWs.setAllBatches(wsResult.allBatches || []);
-          if (wsResult.latestBatch) {
-            transferWs.setCurrentTransferBatch(wsResult.latestBatch);
-          }
-        }
-        if (initialAuditResult && initialAuditResult.logs) {
-          setAuditLogs(initialAuditResult.logs);
-          setAuditNextCursor(initialAuditResult.nextCursor);
-          setAuditHasMore(initialAuditResult.hasMore);
-        }
-      } catch (err) {
-        console.warn('Session or workspace data load notice:', err);
-      } finally {
-        setIsVerifyingSession(false);
+  const loadDbData = async () => {
+    try {
+      if (typeof window !== 'undefined') {
+        const savedTab = localStorage.getItem('investment_active_tab');
+        if (savedTab) setActiveTab(savedTab);
       }
+
+      const [{ user: sessionUser }, wsResult, initialAuditResult] = await Promise.all([
+        getCurrentSessionUserAction(),
+        fetchWorkspaceDataAction(),
+        fetchAuditLogsAction(50).catch(() => ({ logs: [], hasMore: false, nextCursor: undefined as string | undefined })),
+      ]);
+
+      if (sessionUser) {
+        setCurrentUser(sessionUser);
+      }
+      if (wsResult) {
+        // Reset or update dbSetupError: clear if success, set only if real DB failure
+        setDbSetupError(wsResult.dbError || null);
+        if (wsResult.refData) setReferenceDataList(wsResult.refData);
+        if (wsResult.fundRules) setFundRules(wsResult.fundRules);
+        if (wsResult.exceptions) exceptionWs.setExceptions(wsResult.exceptions);
+        if (wsResult.checklists) checklistWs.setChecklists(wsResult.checklists);
+        if (wsResult.users) setUsers(wsResult.users);
+        if (wsResult.uploadedFiles) setUploadedFiles(wsResult.uploadedFiles);
+        if (wsResult.allBatches) transferWs.setAllBatches(wsResult.allBatches);
+        if (wsResult.latestBatch) {
+          transferWs.setCurrentTransferBatch(wsResult.latestBatch);
+        }
+      }
+      if (initialAuditResult && initialAuditResult.logs) {
+        setAuditLogs(initialAuditResult.logs);
+        setAuditNextCursor(initialAuditResult.nextCursor);
+        setAuditHasMore(initialAuditResult.hasMore);
+      }
+    } catch (err) {
+      console.warn('Session or workspace data load notice:', err);
+    } finally {
+      setIsVerifyingSession(false);
     }
+  };
+
+  useEffect(() => {
     loadDbData();
   }, []);
 
@@ -480,8 +480,16 @@ export default function InvestmentPlatformPage() {
     );
   }
 
+  const handleLoginSuccess = async (user: { email: string; fullName: string; role: UserRole }) => {
+    setCurrentUser(user);
+    setDbSetupError(null);
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  };
+
   if (!currentUser) {
-    return <LoginForm onLoginSuccess={setCurrentUser} />;
+    return <LoginForm onLoginSuccess={handleLoginSuccess} />;
   }
 
   const pendingReviewsCount = transferWs.reviewStatus === 'UNDER_REVIEW' ? 1 : 0;
@@ -490,14 +498,14 @@ export default function InvestmentPlatformPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased">
-      {/* ── DATABASE SETUP ERROR BANNER ─────────────────────────────── */}
-      {dbSetupError && (
+      {/* ── DATABASE SETUP ERROR BANNER (Only for actual DB errors, not 401 unauthenticated session) ── */}
+      {dbSetupError && !dbSetupError.includes('401') && !dbSetupError.includes('Unauthorized') && !dbSetupError.includes('session required') && (
         <div className="bg-rose-600 text-white px-6 py-3 text-sm font-semibold flex items-center gap-3 border-b border-rose-700">
           <span className="text-lg">⚠</span>
           <span>
-            <strong>DATABASE NOT SEEDED:</strong> {dbSetupError}
+            <strong>DATABASE SETUP NOTICE:</strong> {dbSetupError}
             {' — '}
-            Run <code className="bg-rose-800 px-1 rounded font-mono text-xs">supabase/schema.sql</code> in the Supabase SQL editor to initialize the database.
+            Run <code className="bg-rose-800 px-1 rounded font-mono text-xs">supabase/master_production_schema.sql</code> in the Supabase SQL editor to initialize the database.
           </span>
         </div>
       )}
@@ -508,6 +516,10 @@ export default function InvestmentPlatformPage() {
         onLogout={async () => {
           await logoutUserAction();
           setCurrentUser(null);
+          setDbSetupError(null);
+          if (typeof window !== 'undefined') {
+            window.location.reload();
+          }
         }}
         activeTab={activeTab}
         onTabChange={(tab) => {
