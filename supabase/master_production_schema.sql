@@ -1,22 +1,21 @@
 -- ==============================================================================
--- MASTER PRODUCTION SCHEMA (COMPLETE & ALL-IN-ONE)
+-- MASTER PRODUCTION SCHEMA (COMPLETE & 100% IDEMPOTENT)
 -- Platform: Egyptian Mutual Fund Clearing, Netting & Trading Settlement Hub
 --
 -- Instructions:
 -- 1. Open Supabase Studio -> SQL Editor
--- 2. Click "+ New query"
+-- 2. Click "+ New query" (open a clean, blank query tab)
 -- 3. Paste this ENTIRE script and click "Run" (Ctrl + Enter)
 --
--- What this script accomplishes:
--- [1] Complete Tables: Roles, Users, Funds, Rules, Schedules, Reference Data,
---     Uploaded Files, Transactions, Exceptions, Audit Logs, Checklists,
---     Transfer Sheet Batches, Transfer Sheet Lines, Transfer Line Adjustments, Reports.
--- [2] Cumulative Buy & Sell Netting: adjusted_buy_amount & adjusted_sell_amount.
--- [3] Foreign Key Cascades: ON DELETE SET NULL on all tables (eliminates user deletion errors).
--- [4] Audit Log Immutability: Drops any blocking foreign keys on audit_logs.
--- [5] Performance Optimization: Wraps all RLS in scalar subqueries (SELECT auth.uid()).
--- [6] Complete Seed Data: 68 Egyptian Funds, Fund Rules, Schedules, and 7 Checklists.
--- [7] Administrative RPCs: admin_set_user_password & admin_delete_user.
+-- Features:
+-- [1] Zero ON CONFLICT Dependencies (Eliminates Error 42P10 completely)
+-- [2] Pre-Column Existence Check (Eliminates Error 42703 completely)
+-- [3] Foreign Key Cascades: ON DELETE SET NULL on all referencing tables
+-- [4] Audit Logs Preserved: Drops blocking FKs on audit_logs
+-- [5] Cumulative Buy & Sell Netting: adjusted_buy_amount & adjusted_sell_amount
+-- [6] Supabase Performance Advisor: All RLS wrapped in (SELECT auth.uid())
+-- [7] Complete Seeds: 68 Egyptian Mutual Funds, Rules, Schedules & 7 Checklists
+-- [8] Security Definer RPCs: admin_set_user_password & admin_delete_user
 -- ==============================================================================
 
 -- 0. EXTENSIONS
@@ -33,14 +32,18 @@ CREATE TABLE IF NOT EXISTS public.roles (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
-INSERT INTO public.roles (name, description) VALUES
-('SUPER_ADMIN', 'Full system control, executive approvals, late overrides, and user provisioning'),
-('OPERATIONS_USER', 'Standard operational staff executing daily trades and netting processing'),
-('OPERATIONS_MAKER', 'Operational maker submitting daily trade batches and drafts'),
-('OPERATIONS_CHECKER', 'Independent checker reviewing and approving daily netting batches (4-Eyes Principle)'),
-('FINANCE_CONTROLLER', 'Financial auditor verifying bank netting sheets and ledger postings'),
-('AUDITOR', 'Read-only compliance and regulatory inspection access')
-ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description;
+-- Seed Roles without ON CONFLICT dependency
+INSERT INTO public.roles (name, description)
+SELECT v.name, v.description
+FROM (VALUES
+    ('SUPER_ADMIN', 'Full system control, executive approvals, late overrides, and user provisioning'),
+    ('OPERATIONS_USER', 'Standard operational staff executing daily trades and netting processing'),
+    ('OPERATIONS_MAKER', 'Operational maker submitting daily trade batches and drafts'),
+    ('OPERATIONS_CHECKER', 'Independent checker reviewing and approving daily netting batches (4-Eyes Principle)'),
+    ('FINANCE_CONTROLLER', 'Financial auditor verifying bank netting sheets and ledger postings'),
+    ('AUDITOR', 'Read-only compliance and regulatory inspection access')
+) AS v(name, description)
+WHERE NOT EXISTS (SELECT 1 FROM public.roles r WHERE r.name = v.name);
 
 -- ==============================================================================
 -- 2. USERS PROFILE TABLE
@@ -56,7 +59,6 @@ CREATE TABLE IF NOT EXISTS public.users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
--- Ensure users.id cascades from auth.users(id)
 ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_id_fkey;
 ALTER TABLE public.users 
     ADD CONSTRAINT users_id_fkey 
@@ -82,79 +84,80 @@ ALTER TABLE public.funds
     ADD CONSTRAINT funds_created_by_fkey 
     FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
-INSERT INTO public.funds (fund_code, fund_name, fund_type, status) VALUES
-('1001', 'AZ - IDKHAR', 'T0', 'ACTIVE'),
-('100-100', 'Beltone EGX100 Fund', 'T1', 'ACTIVE'),
-('1004', 'Ataa Charity Fund', 'T0', 'ACTIVE'),
-('1005', 'Al-Siola Fund-NI Capital', 'T0', 'ACTIVE'),
-('1006', 'Aafaq Investment Fund', 'T1', 'ACTIVE'),
-('1010', 'AZ - FORAS', 'T1', 'ACTIVE'),
-('1011', 'Wethaq Investment', 'T0', 'ACTIVE'),
-('1012', 'AZ - Estehkak T27 USD', 'T0', 'CLOSED'),
-('1014', 'Misr Tkaful Money Market', 'T0', 'ACTIVE'),
-('1015', 'CIAM Misr Equity', 'T1', 'ACTIVE'),
-('1016', 'Cash Mubasher Fund', 'T0', 'ACTIVE'),
-('1017', 'Istsmar w Aman', 'T1', 'ACTIVE'),
-('1018', 'HORUS - AFIM', 'T0', 'ACTIVE'),
-('1020', 'Misr Al Mostakbal', 'T1', 'ACTIVE'),
-('1021', 'CIAM - Misr Al Youmy', 'T0', 'ACTIVE'),
-('AHLAC', 'Tamayoz - AFIM', 'T0', 'ACTIVE'),
-('Al Hayah', 'NBK Al-Hayah', 'T1', 'ACTIVE'),
-('Almezan', 'NBK Al-Mizan', 'T1', 'ACTIVE'),
-('ARUP', 'Arope Money Market', 'T0', 'CLOSED'),
-('Belton USD', 'Beltone Fixed Income USD', 'T1', 'ACTIVE'),
-('B-Secure', 'Beltone Fixed Income EGP', 'T0', 'ACTIVE'),
-('CI MANAGEMENT', 'CI-ctor Consuming', 'T1', 'ACTIVE'),
-('CIAM Building', 'CI-ctor Building', 'T1', 'ACTIVE'),
-('CIAM Digital Pay', 'CI-ctor Digital Pay', 'T1', 'ACTIVE'),
-('CIAM Exporting', 'CI-ctor Exporting', 'T1', 'ACTIVE'),
-('CIAM Technology', 'CI-ctor Technology', 'T1', 'ACTIVE'),
-('Consumer', 'Beltone Consumer Fund', 'T1', 'ACTIVE'),
-('Dahab', 'Dahab - AFIM', 'T1', 'ACTIVE'),
-('Delta Insurance Fund', 'Delta Life Assurance', 'T0', 'ACTIVE'),
-('EGYMUBMCA', 'EGYMUBMCA', 'T0', 'ACTIVE'),
-('FANAR', 'El Fanar Cash Fund', 'T0', 'ACTIVE'),
-('Financial', 'Beltone Financial Fund', 'T1', 'ACTIVE'),
-('GIG FUND', 'GIG Money Market', 'T0', 'ACTIVE'),
-('GOLD AZ', 'AZ - Gold', 'T1', 'ACTIVE'),
-('GOSOR', 'Gosour Equity Cumulativ', 'T1', 'ACTIVE'),
-('Industrial', 'Beltone Industrial Fund', 'T1', 'ACTIVE'),
-('Ishraq', 'NBK Money Market', 'T0', 'ACTIVE'),
-('ISKAN', 'Iskan - Kol Youm', 'T1', 'ACTIVE'),
-('Kenz - foras', 'Kenz Foras AAIH', 'T1', 'ACTIVE'),
-('kenzshariaa', 'Kenz Shariah', 'T1', 'ACTIVE'),
-('Maksab OZ', 'Maksab OZ USD', 'T1', 'ACTIVE'),
-('Momentum', 'Cairo Capital Cumulative', 'T1', 'ACTIVE'),
-('Mubasher Equity Fund', 'Mubasher Equity Fund', 'T1', 'ACTIVE'),
-('Mubasher Gold', 'Dahab Mubasher', 'T1', 'ACTIVE'),
-('NAMAA Invest', 'NBK Namaa', 'T1', 'ACTIVE'),
-('ODIN IV', 'Odin Money Market', 'T0', 'ACTIVE'),
-('Real-Estate', 'Beltone Real Estate Fund', 'T1', 'ACTIVE'),
-('Sabayek', 'Sabayek - Belton', 'T1', 'ACTIVE'),
-('Sarwaty Fund', 'Sarwaty Fund', 'T0', 'CLOSED'),
-('Shariah Compliant Fund', 'CIAM - Shariah Equity', 'T1', 'ACTIVE'),
-('Stream Fund', 'Cairo Capital Fixed Inc', 'T1', 'ACTIVE'),
-('Target First', 'Target Fixed Income Fund', 'T0', 'ACTIVE'),
-('TREND', 'Odin Equity Fund', 'T1', 'ACTIVE'),
-('Wafra', 'Beltone EGX33 Shariah', 'T1', 'ACTIVE'),
-('WELADNA', 'Weladna Charity fund', 'T0', 'ACTIVE'),
-('Zaldi Star', 'Zaldi Money Market', 'T0', 'ACTIVE'),
-('Zaldi El Masry', 'Zaldi El Masry Fund', 'T1', 'ACTIVE'),
-('CI 20HD 7', 'CI 20HD 7', 'T1', 'ACTIVE'),
-('CI SEC 8', 'CI SEC 8', 'T1', 'ACTIVE'),
-('CI THEQUANT 6', 'CI THEQUANT 6', 'T1', 'ACTIVE'),
-('Mubasher USD', 'Dollar Mubasher FI Fund', 'T0', 'ACTIVE'),
-('AlShakmagya', 'Bokra Gold', 'T1', 'ACTIVE'),
-('Mubasher Fadda', 'Mubasher Silver Fund', 'T1', 'ACTIVE'),
-('Bareeq', 'Bareeq fund', 'T1', 'ACTIVE'),
-('PFI Cashi', 'PFI Cashi fund', 'T0', 'ACTIVE'),
-('Kenz EGX70', 'Kenz EGX70', 'T1', 'ACTIVE'),
-('Kenz EGX 35 LV', 'Kenz EGX 35 LV', 'T1', 'ACTIVE'),
-('Granite fund', 'Granite fund', 'T0', 'ACTIVE')
-ON CONFLICT (fund_code) DO UPDATE SET
-    fund_name = EXCLUDED.fund_name,
-    fund_type = EXCLUDED.fund_type,
-    status = EXCLUDED.status;
+-- Seed Funds without ON CONFLICT dependency
+INSERT INTO public.funds (fund_code, fund_name, fund_type, status)
+SELECT v.fund_code, v.fund_name, v.fund_type, v.status
+FROM (VALUES
+    ('1001', 'AZ - IDKHAR', 'T0', 'ACTIVE'),
+    ('100-100', 'Beltone EGX100 Fund', 'T1', 'ACTIVE'),
+    ('1004', 'Ataa Charity Fund', 'T0', 'ACTIVE'),
+    ('1005', 'Al-Siola Fund-NI Capital', 'T0', 'ACTIVE'),
+    ('1006', 'Aafaq Investment Fund', 'T1', 'ACTIVE'),
+    ('1010', 'AZ - FORAS', 'T1', 'ACTIVE'),
+    ('1011', 'Wethaq Investment', 'T0', 'ACTIVE'),
+    ('1012', 'AZ - Estehkak T27 USD', 'T0', 'CLOSED'),
+    ('1014', 'Misr Tkaful Money Market', 'T0', 'ACTIVE'),
+    ('1015', 'CIAM Misr Equity', 'T1', 'ACTIVE'),
+    ('1016', 'Cash Mubasher Fund', 'T0', 'ACTIVE'),
+    ('1017', 'Istsmar w Aman', 'T1', 'ACTIVE'),
+    ('1018', 'HORUS - AFIM', 'T0', 'ACTIVE'),
+    ('1020', 'Misr Al Mostakbal', 'T1', 'ACTIVE'),
+    ('1021', 'CIAM - Misr Al Youmy', 'T0', 'ACTIVE'),
+    ('AHLAC', 'Tamayoz - AFIM', 'T0', 'ACTIVE'),
+    ('Al Hayah', 'NBK Al-Hayah', 'T1', 'ACTIVE'),
+    ('Almezan', 'NBK Al-Mizan', 'T1', 'ACTIVE'),
+    ('ARUP', 'Arope Money Market', 'T0', 'CLOSED'),
+    ('Belton USD', 'Beltone Fixed Income USD', 'T1', 'ACTIVE'),
+    ('B-Secure', 'Beltone Fixed Income EGP', 'T0', 'ACTIVE'),
+    ('CI MANAGEMENT', 'CI-ctor Consuming', 'T1', 'ACTIVE'),
+    ('CIAM Building', 'CI-ctor Building', 'T1', 'ACTIVE'),
+    ('CIAM Digital Pay', 'CI-ctor Digital Pay', 'T1', 'ACTIVE'),
+    ('CIAM Exporting', 'CI-ctor Exporting', 'T1', 'ACTIVE'),
+    ('CIAM Technology', 'CI-ctor Technology', 'T1', 'ACTIVE'),
+    ('Consumer', 'Beltone Consumer Fund', 'T1', 'ACTIVE'),
+    ('Dahab', 'Dahab - AFIM', 'T1', 'ACTIVE'),
+    ('Delta Insurance Fund', 'Delta Life Assurance', 'T0', 'ACTIVE'),
+    ('EGYMUBMCA', 'EGYMUBMCA', 'T0', 'ACTIVE'),
+    ('FANAR', 'El Fanar Cash Fund', 'T0', 'ACTIVE'),
+    ('Financial', 'Beltone Financial Fund', 'T1', 'ACTIVE'),
+    ('GIG FUND', 'GIG Money Market', 'T0', 'ACTIVE'),
+    ('GOLD AZ', 'AZ - Gold', 'T1', 'ACTIVE'),
+    ('GOSOR', 'Gosour Equity Cumulativ', 'T1', 'ACTIVE'),
+    ('Industrial', 'Beltone Industrial Fund', 'T1', 'ACTIVE'),
+    ('Ishraq', 'NBK Money Market', 'T0', 'ACTIVE'),
+    ('ISKAN', 'Iskan - Kol Youm', 'T1', 'ACTIVE'),
+    ('Kenz - foras', 'Kenz Foras AAIH', 'T1', 'ACTIVE'),
+    ('kenzshariaa', 'Kenz Shariah', 'T1', 'ACTIVE'),
+    ('Maksab OZ', 'Maksab OZ USD', 'T1', 'ACTIVE'),
+    ('Momentum', 'Cairo Capital Cumulative', 'T1', 'ACTIVE'),
+    ('Mubasher Equity Fund', 'Mubasher Equity Fund', 'T1', 'ACTIVE'),
+    ('Mubasher Gold', 'Dahab Mubasher', 'T1', 'ACTIVE'),
+    ('NAMAA Invest', 'NBK Namaa', 'T1', 'ACTIVE'),
+    ('ODIN IV', 'Odin Money Market', 'T0', 'ACTIVE'),
+    ('Real-Estate', 'Beltone Real Estate Fund', 'T1', 'ACTIVE'),
+    ('Sabayek', 'Sabayek - Belton', 'T1', 'ACTIVE'),
+    ('Sarwaty Fund', 'Sarwaty Fund', 'T0', 'CLOSED'),
+    ('Shariah Compliant Fund', 'CIAM - Shariah Equity', 'T1', 'ACTIVE'),
+    ('Stream Fund', 'Cairo Capital Fixed Inc', 'T1', 'ACTIVE'),
+    ('Target First', 'Target Fixed Income Fund', 'T0', 'ACTIVE'),
+    ('TREND', 'Odin Equity Fund', 'T1', 'ACTIVE'),
+    ('Wafra', 'Beltone EGX33 Shariah', 'T1', 'ACTIVE'),
+    ('WELADNA', 'Weladna Charity fund', 'T0', 'ACTIVE'),
+    ('Zaldi Star', 'Zaldi Money Market', 'T0', 'ACTIVE'),
+    ('Zaldi El Masry', 'Zaldi El Masry Fund', 'T1', 'ACTIVE'),
+    ('CI 20HD 7', 'CI 20HD 7', 'T1', 'ACTIVE'),
+    ('CI SEC 8', 'CI SEC 8', 'T1', 'ACTIVE'),
+    ('CI THEQUANT 6', 'CI THEQUANT 6', 'T1', 'ACTIVE'),
+    ('Mubasher USD', 'Dollar Mubasher FI Fund', 'T0', 'ACTIVE'),
+    ('AlShakmagya', 'Bokra Gold', 'T1', 'ACTIVE'),
+    ('Mubasher Fadda', 'Mubasher Silver Fund', 'T1', 'ACTIVE'),
+    ('Bareeq', 'Bareeq fund', 'T1', 'ACTIVE'),
+    ('PFI Cashi', 'PFI Cashi fund', 'T0', 'ACTIVE'),
+    ('Kenz EGX70', 'Kenz EGX70', 'T1', 'ACTIVE'),
+    ('Kenz EGX 35 LV', 'Kenz EGX 35 LV', 'T1', 'ACTIVE'),
+    ('Granite fund', 'Granite fund', 'T0', 'ACTIVE')
+) AS v(fund_code, fund_name, fund_type, status)
+WHERE NOT EXISTS (SELECT 1 FROM public.funds f WHERE f.fund_code = v.fund_code);
 
 -- ==============================================================================
 -- 4. FUND SETTLEMENT RULES MATRIX (T0 / T1 VISIBILITY MATRIX)
@@ -167,8 +170,7 @@ CREATE TABLE IF NOT EXISTS public.fund_rules (
     is_transaction_value_visible BOOLEAN NOT NULL DEFAULT TRUE,
     is_quantity_visible BOOLEAN NOT NULL DEFAULT TRUE,
     created_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
-    CONSTRAINT unique_rule_per_type_side UNIQUE (fund_type, order_side)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
 ALTER TABLE public.fund_rules ADD COLUMN IF NOT EXISTS fund_id UUID REFERENCES public.funds(id) ON DELETE CASCADE;
@@ -179,14 +181,18 @@ ALTER TABLE public.fund_rules
     ADD CONSTRAINT fund_rules_created_by_fkey 
     FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
-INSERT INTO public.fund_rules (fund_type, order_side, is_transaction_value_visible, is_quantity_visible) VALUES
-('T0', 'BUY', TRUE, TRUE),
-('T0', 'SELL', TRUE, TRUE),
-('T1', 'BUY', TRUE, FALSE),
-('T1', 'SELL', FALSE, TRUE)
-ON CONFLICT (fund_type, order_side) DO UPDATE SET
-    is_transaction_value_visible = EXCLUDED.is_transaction_value_visible,
-    is_quantity_visible = EXCLUDED.is_quantity_visible;
+INSERT INTO public.fund_rules (fund_type, order_side, is_transaction_value_visible, is_quantity_visible)
+SELECT v.fund_type, v.order_side, v.is_transaction_value_visible, v.is_quantity_visible
+FROM (VALUES
+    ('T0', 'BUY', TRUE, TRUE),
+    ('T0', 'SELL', TRUE, TRUE),
+    ('T1', 'BUY', TRUE, FALSE),
+    ('T1', 'SELL', FALSE, TRUE)
+) AS v(fund_type, order_side, is_transaction_value_visible, is_quantity_visible)
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.fund_rules fr 
+    WHERE fr.fund_type = v.fund_type AND fr.order_side = v.order_side
+);
 
 -- ==============================================================================
 -- 5. FUND SCHEDULES TABLE (OPERATIONAL CYCLES & NOTICE RULES)
@@ -205,80 +211,69 @@ CREATE TABLE IF NOT EXISTS public.fund_schedules (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_fund_schedules_code') THEN
-        ALTER TABLE public.fund_schedules ADD CONSTRAINT uq_fund_schedules_code UNIQUE (fund_code);
-    END IF;
-EXCEPTION
-    WHEN OTHERS THEN NULL;
-END $$;
-
-INSERT INTO public.fund_schedules (fund_code, fund_type, frequency, buy_days, sell_days, notice_lead_day, notice_cutoff_time, raw_instruction, status) VALUES
-('1001', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0', 'ACTIVE'),
-('100-100', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('1004', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'خيري', 'ACTIVE'),
-('1005', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0', 'ACTIVE'),
-('1006', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('1010', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('1011', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('1012', 'T0', 'CLOSED', '[]'::jsonb, '[]'::jsonb, 'NONE', '12:00', 'closed', 'CLOSED'),
-('1014', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('1015', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('1016', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0', 'ACTIVE'),
-('1017', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('1018', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('1020', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
-('1021', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('AHLAC', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('Al Hayah', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
-('Almezan', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
-('ARUP', 'T0', 'CLOSED', '[]'::jsonb, '[]'::jsonb, 'NONE', '12:00', 'closed', 'CLOSED'),
-('Belton USD', 'T1', 'BIWEEKLY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["2ND_MON","4TH_MON"]'::jsonb, 'NONE', '12:00', 'شراء T+1&البيع يوم الاثنين فى ثاني اسبوع ورابع اسبوع من كل شهر', 'ACTIVE'),
-('B-Secure', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0', 'ACTIVE'),
-('CI MANAGEMENT', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('CIAM Building', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('CIAM Digital Pay', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('CIAM Exporting', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('CIAM Technology', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Consumer', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Dahab', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Delta Insurance Fund', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('EGYMUBMCA', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('FANAR', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('Financial', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('GIG FUND', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('GOLD AZ', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('GOSOR', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Industrial', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Ishraq', 'T0', 'DAILY', '[]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0 وحاليا بيتم الاستراد فقط مغلق اكتتاب', 'ACTIVE'),
-('ISKAN', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Kenz - foras', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('kenzshariaa', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Maksab OZ', 'T1', 'MONTHLY', '["MON"]'::jsonb, '["FIRST_MON_AFTER_DAY_18"]'::jsonb, 'DAY_18', '12:00', 'الشراء اسبوعي يومي الاثنين & البيع بيتم ارسال اخطار يوم 18 من كل شهر وبيتم التنفيذ فى اول يوم اثنين من كل شهر', 'ACTIVE'),
-('Momentum', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+1', 'ACTIVE'),
-('Mubasher Equity Fund', 'T1', 'WEEKLY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'الشراء t+1&البيع اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
-('Mubasher Gold', 'T1', 'CUSTOM', '["MON","TUE","WED","THU"]'::jsonb, '["MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'من الاثنين للخميس T+1', 'ACTIVE'),
-('NAMAA Invest', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
-('ODIN IV', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('Real-Estate', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Sabayek', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Sarwaty Fund', 'T0', 'CLOSED', '[]'::jsonb, '[]'::jsonb, 'NONE', '12:00', 'closed', 'CLOSED'),
-('Shariah Compliant Fund', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('Stream Fund', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+1', 'ACTIVE'),
-('Target First', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
-('TREND', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
-('Wafra', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
-('WELADNA', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'خيري', 'ACTIVE')
-ON CONFLICT (fund_code) DO UPDATE SET
-    fund_type = EXCLUDED.fund_type,
-    frequency = EXCLUDED.frequency,
-    buy_days = EXCLUDED.buy_days,
-    sell_days = EXCLUDED.sell_days,
-    notice_lead_day = EXCLUDED.notice_lead_day,
-    notice_cutoff_time = EXCLUDED.notice_cutoff_time,
-    raw_instruction = EXCLUDED.raw_instruction,
-    status = EXCLUDED.status;
+-- Seed Fund Schedules safely with WHERE NOT EXISTS
+INSERT INTO public.fund_schedules (fund_code, fund_type, frequency, buy_days, sell_days, notice_lead_day, notice_cutoff_time, raw_instruction, status)
+SELECT v.fund_code, v.fund_type, v.frequency, v.buy_days, v.sell_days, v.notice_lead_day, v.notice_cutoff_time, v.raw_instruction, v.status
+FROM (VALUES
+    ('1001', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0', 'ACTIVE'),
+    ('100-100', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('1004', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'خيري', 'ACTIVE'),
+    ('1005', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0', 'ACTIVE'),
+    ('1006', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('1010', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('1011', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('1012', 'T0', 'CLOSED', '[]'::jsonb, '[]'::jsonb, 'NONE', '12:00', 'closed', 'CLOSED'),
+    ('1014', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('1015', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('1016', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0', 'ACTIVE'),
+    ('1017', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('1018', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('1020', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
+    ('1021', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('AHLAC', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('Al Hayah', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
+    ('Almezan', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
+    ('ARUP', 'T0', 'CLOSED', '[]'::jsonb, '[]'::jsonb, 'NONE', '12:00', 'closed', 'CLOSED'),
+    ('Belton USD', 'T1', 'BIWEEKLY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["2ND_MON","4TH_MON"]'::jsonb, 'NONE', '12:00', 'شراء T+1&البيع يوم الاثنين فى ثاني اسبوع ورابع اسبوع من كل شهر', 'ACTIVE'),
+    ('B-Secure', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0', 'ACTIVE'),
+    ('CI MANAGEMENT', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('CIAM Building', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('CIAM Digital Pay', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('CIAM Exporting', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('CIAM Technology', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Consumer', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Dahab', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Delta Insurance Fund', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('EGYMUBMCA', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('FANAR', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('Financial', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('GIG FUND', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('GOLD AZ', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('GOSOR', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Industrial', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Ishraq', 'T0', 'DAILY', '[]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+0 وحاليا بيتم الاستراد فقط مغلق اكتتاب', 'ACTIVE'),
+    ('ISKAN', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Kenz - foras', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('kenzshariaa', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Maksab OZ', 'T1', 'MONTHLY', '["MON"]'::jsonb, '["FIRST_MON_AFTER_DAY_18"]'::jsonb, 'DAY_18', '12:00', 'الشراء اسبوعي يومي الاثنين & البيع بيتم ارسال اخطار يوم 18 من كل شهر وبيتم التنفيذ فى اول يوم اثنين من كل شهر', 'ACTIVE'),
+    ('Momentum', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+1', 'ACTIVE'),
+    ('Mubasher Equity Fund', 'T1', 'WEEKLY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'الشراء t+1&البيع اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
+    ('Mubasher Gold', 'T1', 'CUSTOM', '["MON","TUE","WED","THU"]'::jsonb, '["MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'من الاثنين للخميس T+1', 'ACTIVE'),
+    ('NAMAA Invest', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
+    ('ODIN IV', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('Real-Estate', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Sabayek', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Sarwaty Fund', 'T0', 'CLOSED', '[]'::jsonb, '[]'::jsonb, 'NONE', '12:00', 'closed', 'CLOSED'),
+    ('Shariah Compliant Fund', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('Stream Fund', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+1', 'ACTIVE'),
+    ('Target First', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 't+0', 'ACTIVE'),
+    ('TREND', 'T1', 'WEEKLY', '["SUN"]'::jsonb, '["SUN"]'::jsonb, 'THURSDAY', '14:00', 'اسبوعي بيتم ارسال اخطار الخميس وبيتم التنفيذ الاحد', 'ACTIVE'),
+    ('Wafra', 'T1', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'T+1', 'ACTIVE'),
+    ('WELADNA', 'T0', 'DAILY', '["SUN","MON","TUE","WED","THU"]'::jsonb, '["SUN","MON","TUE","WED","THU"]'::jsonb, 'NONE', '12:00', 'خيري', 'ACTIVE')
+) AS v(fund_code, fund_type, frequency, buy_days, sell_days, notice_lead_day, notice_cutoff_time, raw_instruction, status)
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.fund_schedules fs WHERE fs.fund_code = v.fund_code
+);
 
 -- ==============================================================================
 -- 6. REFERENCE DATA & SYMBOL MAPPING REPOSITORY
@@ -305,37 +300,38 @@ ALTER TABLE public.reference_data
     ADD CONSTRAINT reference_data_created_by_fkey 
     FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
-INSERT INTO public.reference_data (symbol_code, symbol_name, actual_symbol, email_contact, nav_unit_price, fund_type) VALUES
-('1006', 'Aafaq Investment Fund', 'AFAC', 'Afaq Fund', 264.2139, 'T0'),
-('AHLAC', 'AHLY A. CONTRACTORS FUND', 'AHLAC', 'Tamayoz MMF', 17.3411, 'T0'),
-('Al Hayah', 'Al Hayah', 'AlHayah', 'AlHayah - Hayat', 0, 'T0'),
-('Almezan', 'Almezan', 'Almezan', 'Al Mizan', 0, 'T0'),
-('ARUP', 'Arupe Cumulative Fund', 'AROPE', 'AROPE Insurance Misr Fund', 0, 'T0'),
-('1004', 'Ataa Charity Fund', 'ATAA', 'Ataa Fund', 0, 'T0'),
-('1001', 'AZ - ADKHAR', 'ADKHAR-AZ', 'ادخار / AZFI', 21.13012, 'T0'),
-('1010', 'AZ - FORAS', 'Azimut Stocks', 'Azimut Equity Opportunity Fund', 52.42922, 'T1'),
-('1012', 'AZ- ESTEHKAK - USD', 'STRC', 'Azimut Target Maturity - USD', 10.50541, 'T1'),
-('GOLD AZ', 'AZIMUT GOLD', 'Gold AZ', 'AZ-GOLD', 25.2991, 'T0'),
-('Sabayek', 'Beltone Evolve Gold Fund', 'Sabayek', 'Sabayek', 1.77656, 'T0'),
-('1016', 'Cash Mubasher Fund', 'CashMubasher', 'Cash Mubasher Fund Price', 24.03852, 'T0'),
-('CIAM Building', 'CIAM Building', 'CIAM Building', 'CIAM Sectors Prices - CIAM Building', 21.46952, 'T0'),
-('1018', 'HORUS FUND', 'Horus', 'Horas MM', 20.89333, 'T0'),
-('kenzshariaa', 'KENZSHARIAA', 'KENZSHARIAA', 'Kenz-Shareiaa - KENZSHARIAA', 181.07, 'T0'),
-('1021', 'Misr Al-Youm', 'Misr Al-Youm', 'Misr Al-Youm', 19.40342, 'T0'),
-('1014', 'Misr Takaful Money Market', 'Misr Takaful', 'Misr Takaful Fund', 212.05923, 'T1'),
-('Mubasher Equity Fund', 'Mubasher Equity Fund', 'Mubasher Equity', 'Mubasher Equity Fund Price', 2.0182, 'T1'),
-('Mubasher Gold', 'Mubasher Gold', 'Mubasher Gold', 'Dahab Mubasher - Mubasher Gold', 13.0276, 'T0'),
-('1005', 'NI Capital Money Market', 'NICapital', 'SIULA fund - NI MM FUND', 24.54846, 'T1'),
-('ODIN IV', 'ODIN IV', 'ODIN IV', 'ODIN MMF', 1.25639, 'T0'),
-('Shariah Compliant Fund', 'Shariah Compliant Fund', 'Shariah Compliant Fund', 'Misr Shariaa Equity Price', 22.42274, 'T1'),
-('100-100', 'Tharawat 100/100', 'Tharawat - 100/100', 'Beltone EGX100 - Tharawat 100/100', 2.56203, 'T1'),
-('Wafra', 'Tharawat Wafra', 'Tharawat - Wafra', 'Beltone EGX33 - Tharawat Wafra', 2.18483, 'T1'),
-('1011', 'Wethaq Investment', 'IEIG', 'Wethaq M.M', 23.4454, 'T1')
-ON CONFLICT (symbol_code) DO UPDATE SET
-    symbol_name = EXCLUDED.symbol_name,
-    actual_symbol = EXCLUDED.actual_symbol,
-    nav_unit_price = EXCLUDED.nav_unit_price,
-    fund_type = EXCLUDED.fund_type;
+INSERT INTO public.reference_data (symbol_code, symbol_name, actual_symbol, email_contact, nav_unit_price, fund_type)
+SELECT v.symbol_code, v.symbol_name, v.actual_symbol, v.email_contact, v.nav_unit_price, v.fund_type
+FROM (VALUES
+    ('1006', 'Aafaq Investment Fund', 'AFAC', 'Afaq Fund', 264.2139, 'T0'),
+    ('AHLAC', 'AHLY A. CONTRACTORS FUND', 'AHLAC', 'Tamayoz MMF', 17.3411, 'T0'),
+    ('Al Hayah', 'Al Hayah', 'AlHayah', 'AlHayah - Hayat', 0, 'T0'),
+    ('Almezan', 'Almezan', 'Almezan', 'Al Mizan', 0, 'T0'),
+    ('ARUP', 'Arupe Cumulative Fund', 'AROPE', 'AROPE Insurance Misr Fund', 0, 'T0'),
+    ('1004', 'Ataa Charity Fund', 'ATAA', 'Ataa Fund', 0, 'T0'),
+    ('1001', 'AZ - ADKHAR', 'ADKHAR-AZ', 'ادخار / AZFI', 21.13012, 'T0'),
+    ('1010', 'AZ - FORAS', 'Azimut Stocks', 'Azimut Equity Opportunity Fund', 52.42922, 'T1'),
+    ('1012', 'AZ- ESTEHKAK - USD', 'STRC', 'Azimut Target Maturity - USD', 10.50541, 'T1'),
+    ('GOLD AZ', 'AZIMUT GOLD', 'Gold AZ', 'AZ-GOLD', 25.2991, 'T0'),
+    ('Sabayek', 'Beltone Evolve Gold Fund', 'Sabayek', 'Sabayek', 1.77656, 'T0'),
+    ('1016', 'Cash Mubasher Fund', 'CashMubasher', 'Cash Mubasher Fund Price', 24.03852, 'T0'),
+    ('CIAM Building', 'CIAM Building', 'CIAM Building', 'CIAM Sectors Prices - CIAM Building', 21.46952, 'T0'),
+    ('1018', 'HORUS FUND', 'Horus', 'Horas MM', 20.89333, 'T0'),
+    ('kenzshariaa', 'KENZSHARIAA', 'KENZSHARIAA', 'Kenz-Shareiaa - KENZSHARIAA', 181.07, 'T0'),
+    ('1021', 'Misr Al-Youm', 'Misr Al-Youm', 'Misr Al-Youm', 19.40342, 'T0'),
+    ('1014', 'Misr Takaful Money Market', 'Misr Takaful', 'Misr Takaful Fund', 212.05923, 'T1'),
+    ('Mubasher Equity Fund', 'Mubasher Equity Fund', 'Mubasher Equity', 'Mubasher Equity Fund Price', 2.0182, 'T1'),
+    ('Mubasher Gold', 'Mubasher Gold', 'Mubasher Gold', 'Dahab Mubasher - Mubasher Gold', 13.0276, 'T0'),
+    ('1005', 'NI Capital Money Market', 'NICapital', 'SIULA fund - NI MM FUND', 24.54846, 'T1'),
+    ('ODIN IV', 'ODIN IV', 'ODIN IV', 'ODIN MMF', 1.25639, 'T0'),
+    ('Shariah Compliant Fund', 'Shariah Compliant Fund', 'Shariah Compliant Fund', 'Misr Shariaa Equity Price', 22.42274, 'T1'),
+    ('100-100', 'Tharawat 100/100', 'Tharawat - 100/100', 'Beltone EGX100 - Tharawat 100/100', 2.56203, 'T1'),
+    ('Wafra', 'Tharawat Wafra', 'Tharawat - Wafra', 'Beltone EGX33 - Tharawat Wafra', 2.18483, 'T1'),
+    ('1011', 'Wethaq Investment', 'IEIG', 'Wethaq M.M', 23.4454, 'T1')
+) AS v(symbol_code, symbol_name, actual_symbol, email_contact, nav_unit_price, fund_type)
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.reference_data rd WHERE rd.symbol_code = v.symbol_code
+);
 
 -- ==============================================================================
 -- 7. UPLOADED SOURCE SPREADSHEETS ARCHIVE
@@ -440,7 +436,7 @@ ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(255);
 ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS user_name VARCHAR(255);
 ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(45);
 
--- Drop any foreign key constraints on audit_logs that could prevent user deletion
+-- Safely drop any foreign keys on audit_logs that reference users
 DO $$
 DECLARE
     r RECORD;
@@ -499,29 +495,20 @@ ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS reopened_by_name VARCHAR(
 ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS reopen_reason TEXT;
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_checklist_code') THEN
-        ALTER TABLE public.checklists ADD CONSTRAINT uq_checklist_code UNIQUE (checklist_code);
-    END IF;
-EXCEPTION
-    WHEN OTHERS THEN NULL;
-END $$;
-
-INSERT INTO public.checklists (checklist_code, title, description, due_time, priority, mandatory, is_completed, is_approved) VALUES
-('CHK-01', 'Fund Daily NAV & Valuation Price Verification', 'التحقق من أسعار وثائق صناديق الاستثمار وقيم صافي الأصول (NAV) المعلنة ومطابقتها قبل بدء تنفيذ العمليات.', '10:00', 'CRITICAL', TRUE, FALSE, FALSE),
-('CHK-02', 'Morning T+1 Equity Orders Acceptance & Broker Routing', 'مراجعة وقبول أوامر التداول الصباحية لصناديق الأسهم (T+1) وإرسالها رسمياً لشركات السمسرة والوسطاء المنفذين.', '11:00', 'CRITICAL', TRUE, FALSE, FALSE),
-('CHK-03', 'Pre-Market T+1 Execution Confirmation & Broker Approvals Sign-off', 'التأكد من اعتماد ومطابقة جميع أوامر T+1 المنفذة من الوسطاء واستلام إخطارات القبول والاعتماد الكاملة بدون أي رفض.', '11:00', 'CRITICAL', TRUE, FALSE, FALSE),
-('CHK-04', 'Master Orders Dispatch to Fund Administration & Custody Services (T+0 / T+1)', 'إرسال ملف الأوامر الشامل (المهمة الرئيسية) لخدمات إدارة الصناديق وأمناء الحفظ لتسوية وتأكيد عمليات الصناديق النقدية والأسهم.', '12:30', 'CRITICAL', TRUE, FALSE, FALSE),
-('CHK-05', 'Order Status Reconciliation: Acceptance to Final Operational Approval', 'المطابقة الرقابية لتحويل كافة أوامر التداول من حالة القبول المبدئي (Accept) إلى حالة الاعتماد النهائي (Approved) على المنظومة.', '13:00', 'HIGH', TRUE, FALSE, FALSE),
-('CHK-06', 'Net Cash Settlement & Inter-Fund Bank Transfer Approval', 'مراجعة واعتماد صافي مبالغ التحويلات النقدية (Netting) بين الصناديق وحسابات البنوك واعتماد التحويلات النهائية قبل موعد الإقفال البنكي.', '13:30', 'CRITICAL', TRUE, FALSE, FALSE),
-('CHK-07', 'End-of-Day Ledger Posting & Operational Settlement Sign-off', 'المراجعة النهائية لترحيل كافة قيود التسوية (Posting) وتأكيد الإقفال التام لليوم التشغيلي (Complete Execution Sign-off).', '14:30', 'CRITICAL', TRUE, FALSE, FALSE)
-ON CONFLICT (checklist_code) DO UPDATE SET
-    title = EXCLUDED.title,
-    description = EXCLUDED.description,
-    due_time = EXCLUDED.due_time,
-    priority = EXCLUDED.priority,
-    mandatory = EXCLUDED.mandatory;
+INSERT INTO public.checklists (checklist_code, title, description, due_time, priority, mandatory, is_completed, is_approved)
+SELECT v.checklist_code, v.title, v.description, v.due_time, v.priority, v.mandatory, false, false
+FROM (VALUES
+    ('CHK-01', 'Fund Daily NAV & Valuation Price Verification', 'التحقق من أسعار وثائق صناديق الاستثمار وقيم صافي الأصول (NAV) المعلنة ومطابقتها قبل بدء تنفيذ العمليات.', '10:00', 'CRITICAL', TRUE),
+    ('CHK-02', 'Morning T+1 Equity Orders Acceptance & Broker Routing', 'مراجعة وقبول أوامر التداول الصباحية لصناديق الأسهم (T+1) وإرسالها رسمياً لشركات السمسرة والوسطاء المنفذين.', '11:00', 'CRITICAL', TRUE),
+    ('CHK-03', 'Pre-Market T+1 Execution Confirmation & Broker Approvals Sign-off', 'التأكد من اعتماد ومطابقة جميع أوامر T+1 المنفذة من الوسطاء واستلام إخطارات القبول والاعتماد الكاملة بدون أي رفض.', '11:00', 'CRITICAL', TRUE),
+    ('CHK-04', 'Master Orders Dispatch to Fund Administration & Custody Services (T+0 / T+1)', 'إرسال ملف الأوامر الشامل (المهمة الرئيسية) لخدمات إدارة الصناديق وأمناء الحفظ لتسوية وتأكيد عمليات الصناديق النقدية والأسهم.', '12:30', 'CRITICAL', TRUE),
+    ('CHK-05', 'Order Status Reconciliation: Acceptance to Final Operational Approval', 'المطابقة الرقابية لتحويل كافة أوامر التداول من حالة القبول المبدئي (Accept) إلى حالة الاعتماد النهائي (Approved) على المنظومة.', '13:00', 'HIGH', TRUE),
+    ('CHK-06', 'Net Cash Settlement & Inter-Fund Bank Transfer Approval', 'مراجعة واعتماد صافي مبالغ التحويلات النقدية (Netting) بين الصناديق وحسابات البنوك واعتماد التحويلات النهائية قبل موعد الإقفال البنكي.', '13:30', 'CRITICAL', TRUE),
+    ('CHK-07', 'End-of-Day Ledger Posting & Operational Settlement Sign-off', 'المراجعة النهائية لترحيل كافة قيود التسوية (Posting) وتأكيد الإقفال التام لليوم التشغيلي (Complete Execution Sign-off).', '14:30', 'CRITICAL', TRUE)
+) AS v(checklist_code, title, description, due_time, priority, mandatory)
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.checklists c WHERE c.checklist_code = v.checklist_code
+);
 
 -- ==============================================================================
 -- 12. CASH NETTING BATCHES & FOUR-EYES APPROVAL
@@ -577,7 +564,7 @@ CREATE TABLE IF NOT EXISTS public.transfer_sheet_lines (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
--- Ensure all cumulative adjustment columns exist if table was already created
+-- Ensure cumulative adjustment columns exist unconditionally
 ALTER TABLE public.transfer_sheet_lines ADD COLUMN IF NOT EXISTS adjusted_buy_amount NUMERIC(18, 4);
 ALTER TABLE public.transfer_sheet_lines ADD COLUMN IF NOT EXISTS adjusted_sell_amount NUMERIC(18, 4);
 ALTER TABLE public.transfer_sheet_lines ADD COLUMN IF NOT EXISTS adjustment_category VARCHAR(50);
@@ -593,11 +580,11 @@ CREATE TABLE IF NOT EXISTS public.transfer_line_adjustments (
     batch_id UUID NOT NULL REFERENCES public.transfer_sheet_batches(id) ON DELETE CASCADE,
     line_id UUID NOT NULL REFERENCES public.transfer_sheet_lines(id) ON DELETE CASCADE,
     symbol_code VARCHAR(50) NOT NULL,
-    system_net_snapshot NUMERIC(18, 4) NOT NULL,
-    old_adjustment_amount NUMERIC(18, 4) NOT NULL,
-    new_adjustment_amount NUMERIC(18, 4) NOT NULL,
+    system_net_snapshot NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    old_adjustment_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    new_adjustment_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
     delta NUMERIC(18, 4) GENERATED ALWAYS AS (new_adjustment_amount - old_adjustment_amount) STORED,
-    resulting_final_transfer NUMERIC(18, 4) NOT NULL,
+    resulting_final_transfer NUMERIC(18, 4) NOT NULL DEFAULT 0,
     adjustment_category VARCHAR(50) NOT NULL,
     reason TEXT NOT NULL,
     adjusted_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
@@ -610,7 +597,7 @@ CREATE TABLE IF NOT EXISTS public.transfer_line_adjustments (
     timestamp_utc TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
--- Ensure all columns exist before modifying constraints
+-- Ensure all columns exist before modifying constraints (prevents Error 42703)
 ALTER TABLE public.transfer_line_adjustments ADD COLUMN IF NOT EXISTS adjusted_by UUID REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE public.transfer_line_adjustments ADD COLUMN IF NOT EXISTS adjusted_by_name VARCHAR(255);
 ALTER TABLE public.transfer_line_adjustments ADD COLUMN IF NOT EXISTS user_id VARCHAR(255);
@@ -756,12 +743,14 @@ BEGIN
         'Operations User'
     );
 
-    INSERT INTO public.users (id, email, full_name, role_id, status)
-    VALUES (NEW.id, NEW.email, user_full_name, default_role_id, 'ACTIVE')
-    ON CONFLICT (id) DO UPDATE SET
-        email = EXCLUDED.email,
-        full_name = EXCLUDED.full_name,
-        role_id = COALESCE(EXCLUDED.role_id, public.users.role_id);
+    IF EXISTS (SELECT 1 FROM public.users WHERE id = NEW.id) THEN
+        UPDATE public.users
+        SET email = NEW.email, full_name = user_full_name, role_id = COALESCE(public.users.role_id, default_role_id)
+        WHERE id = NEW.id;
+    ELSE
+        INSERT INTO public.users (id, email, full_name, role_id, status)
+        VALUES (NEW.id, NEW.email, user_full_name, default_role_id, 'ACTIVE');
+    END IF;
 
     RETURN NEW;
 END;
@@ -862,13 +851,11 @@ BEGIN
         RAISE EXCEPTION 'Authentication required.';
     END IF;
 
-    -- Fetch caller role
     SELECT r.name INTO caller_role
     FROM public.users u
     JOIN public.roles r ON u.role_id = r.id
     WHERE u.id = caller_id;
 
-    -- Caller must be SUPER_ADMIN or changing their own password
     IF caller_id != target_user_id AND (caller_role IS NULL OR caller_role != 'SUPER_ADMIN') THEN
         RAISE EXCEPTION 'Unauthorized: Only Super Administrators can set passwords for other users.';
     END IF;
@@ -877,7 +864,6 @@ BEGIN
         RAISE EXCEPTION 'Password must be at least 8 characters long.';
     END IF;
 
-    -- Encrypt with bcrypt and update auth.users
     UPDATE auth.users
     SET encrypted_password = extensions.crypt(new_password, extensions.gen_salt('bf')),
         updated_at = NOW()
@@ -915,7 +901,6 @@ BEGIN
         RAISE EXCEPTION 'Safety Guard: Administrators cannot delete their own account.';
     END IF;
 
-    -- Fetch caller role
     SELECT r.name INTO caller_role
     FROM public.users u
     JOIN public.roles r ON u.role_id = r.id
@@ -930,11 +915,9 @@ BEGIN
         SELECT email INTO target_email FROM public.users WHERE id = target_user_id;
     END IF;
 
-    -- Delete from auth.users (cascades cleanly to public.users and sets downstream foreign keys to NULL)
     DELETE FROM auth.users WHERE id = target_user_id;
     DELETE FROM public.users WHERE id = target_user_id;
 
-    -- Record in immutable audit ledger
     INSERT INTO public.audit_logs (
         id, user_id, user_name, action, entity_name, entity_id, old_values, created_at
     ) VALUES (
@@ -956,29 +939,18 @@ $$;
 -- 19. SUPABASE ADVISOR OPTIMIZATIONS & RLS POLICIES
 -- ==============================================================================
 
--- Drop all old policies to prevent duplicates
+-- 1. Bulletproof Dynamic Drop: Drop ALL existing policies in 'public' schema
+-- This guarantees zero "policy already exists" errors regardless of previous migrations
 DO $$
 DECLARE
-    tbl text;
+    pol RECORD;
 BEGIN
-    FOR tbl IN SELECT unnest(ARRAY[
-        'roles', 'users', 'funds', 'fund_rules', 'reference_data',
-        'uploaded_files', 'transactions', 'exceptions', 'audit_logs',
-        'checklists', 'transfer_sheet_batches', 'transfer_sheet_lines',
-        'transfer_line_adjustments', 'fund_schedules', 'generated_reports'
-    ]) LOOP
-        EXECUTE format('DROP POLICY IF EXISTS rls_read_%I ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS rls_write_%I ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS rls_insert_%I ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS rls_update_%I ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS anon_all_%I ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS auth_%I_access ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS auth_%I_read ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS auth_%I_insert ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS authenticated_%I_all ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS authenticated_%I_read ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS authenticated_%I_write ON public.%I;', tbl, tbl);
-        EXECUTE format('DROP POLICY IF EXISTS authenticated_%I_insert ON public.%I;', tbl, tbl);
+    FOR pol IN 
+        SELECT schemaname, tablename, policyname 
+        FROM pg_policies 
+        WHERE schemaname = 'public'
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I CASCADE;', pol.policyname, pol.schemaname, pol.tablename);
     END LOOP;
 END $$;
 
@@ -1002,83 +974,108 @@ ALTER TABLE public.generated_reports         ENABLE ROW LEVEL SECURITY;
 -- Clean, Advisor-Optimized Policies with (SELECT auth.uid()) Scalar Subqueries
 
 -- 1. Configuration & Master Data (Public/Operational Reads)
+DROP POLICY IF EXISTS authenticated_roles_read ON public.roles;
 CREATE POLICY authenticated_roles_read ON public.roles
     FOR SELECT TO authenticated, anon USING (true);
 
+DROP POLICY IF EXISTS authenticated_funds_all ON public.funds;
 CREATE POLICY authenticated_funds_all ON public.funds
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS anon_funds_read ON public.funds;
 CREATE POLICY anon_funds_read ON public.funds
     FOR SELECT TO anon USING (true);
 
+DROP POLICY IF EXISTS authenticated_fund_rules_all ON public.fund_rules;
 CREATE POLICY authenticated_fund_rules_all ON public.fund_rules
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS anon_fund_rules_read ON public.fund_rules;
 CREATE POLICY anon_fund_rules_read ON public.fund_rules
     FOR SELECT TO anon USING (true);
 
+DROP POLICY IF EXISTS authenticated_ref_data_all ON public.reference_data;
 CREATE POLICY authenticated_ref_data_all ON public.reference_data
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS anon_ref_data_read ON public.reference_data;
 CREATE POLICY anon_ref_data_read ON public.reference_data
     FOR SELECT TO anon USING (true);
 
+DROP POLICY IF EXISTS authenticated_fund_schedules_all ON public.fund_schedules;
 CREATE POLICY authenticated_fund_schedules_all ON public.fund_schedules
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS anon_fund_schedules_read ON public.fund_schedules;
 CREATE POLICY anon_fund_schedules_read ON public.fund_schedules
     FOR SELECT TO anon USING (true);
 
 -- 2. Users (Authenticated can view directory and manage accounts)
+DROP POLICY IF EXISTS authenticated_users_read ON public.users;
 CREATE POLICY authenticated_users_read ON public.users
     FOR SELECT TO authenticated USING ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS authenticated_users_write ON public.users;
 CREATE POLICY authenticated_users_write ON public.users
     FOR ALL TO authenticated 
     USING ((SELECT auth.uid()) IS NOT NULL) 
     WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
 -- 3. Operational Tables
+DROP POLICY IF EXISTS authenticated_uploaded_files_all ON public.uploaded_files;
 CREATE POLICY authenticated_uploaded_files_all ON public.uploaded_files
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS anon_uploaded_files_read ON public.uploaded_files;
 CREATE POLICY anon_uploaded_files_read ON public.uploaded_files
     FOR SELECT TO anon USING (true);
 
+DROP POLICY IF EXISTS authenticated_transactions_all ON public.transactions;
 CREATE POLICY authenticated_transactions_all ON public.transactions
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS authenticated_exceptions_all ON public.exceptions;
 CREATE POLICY authenticated_exceptions_all ON public.exceptions
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS authenticated_checklists_all ON public.checklists;
 CREATE POLICY authenticated_checklists_all ON public.checklists
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS anon_checklists_read ON public.checklists;
 CREATE POLICY anon_checklists_read ON public.checklists
     FOR SELECT TO anon USING (true);
 
+DROP POLICY IF EXISTS authenticated_transfer_batches_all ON public.transfer_sheet_batches;
 CREATE POLICY authenticated_transfer_batches_all ON public.transfer_sheet_batches
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS anon_transfer_batches_read ON public.transfer_sheet_batches;
 CREATE POLICY anon_transfer_batches_read ON public.transfer_sheet_batches
     FOR SELECT TO anon USING (true);
 
+DROP POLICY IF EXISTS authenticated_transfer_lines_all ON public.transfer_sheet_lines;
 CREATE POLICY authenticated_transfer_lines_all ON public.transfer_sheet_lines
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS anon_transfer_lines_read ON public.transfer_sheet_lines;
 CREATE POLICY anon_transfer_lines_read ON public.transfer_sheet_lines
     FOR SELECT TO anon USING (true);
 
+DROP POLICY IF EXISTS authenticated_line_adjustments_all ON public.transfer_line_adjustments;
 CREATE POLICY authenticated_line_adjustments_all ON public.transfer_line_adjustments
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS authenticated_reports_all ON public.generated_reports;
 CREATE POLICY authenticated_reports_all ON public.generated_reports
     FOR ALL TO authenticated USING ((SELECT auth.uid()) IS NOT NULL) WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
 -- 4. Audit Trail (Strict Append-Only Ledger)
+DROP POLICY IF EXISTS authenticated_audit_logs_read ON public.audit_logs;
 CREATE POLICY authenticated_audit_logs_read ON public.audit_logs
     FOR SELECT TO authenticated USING ((SELECT auth.uid()) IS NOT NULL);
 
+DROP POLICY IF EXISTS authenticated_audit_logs_insert ON public.audit_logs;
 CREATE POLICY authenticated_audit_logs_insert ON public.audit_logs
     FOR INSERT TO authenticated WITH CHECK ((SELECT auth.uid()) IS NOT NULL);
 
