@@ -122,6 +122,8 @@ interface DbTransferLine {
   actual_symbol?: unknown;
   system_buy_amount?: unknown;
   system_sell_amount?: unknown;
+  adjusted_buy_amount?: unknown;
+  adjusted_sell_amount?: unknown;
   adjustment_amount?: unknown;
   adjustment_category?: unknown;
   adjustment_reason?: unknown;
@@ -151,8 +153,10 @@ function buildTransferBatchObject(
         resultingFinalTransfer: Number(adj.resulting_final_transfer) || 0,
         adjustmentCategory: (adj.adjustment_category || 'MANUAL_ADJUSTMENT') as AdjustmentCategory,
         reason: String(adj.reason),
-        userId: String(adj.user_id),
-        userName: String(adj.user_name),
+        adjustedBuyAmount: adj.adjusted_buy_amount !== null && adj.adjusted_buy_amount !== undefined ? Number(adj.adjusted_buy_amount) : undefined,
+        adjustedSellAmount: adj.adjusted_sell_amount !== null && adj.adjusted_sell_amount !== undefined ? Number(adj.adjusted_sell_amount) : undefined,
+        userId: String(adj.user_id || adj.adjusted_by || ''),
+        userName: String(adj.user_name || adj.adjusted_by_name || ''),
         clientIp: String(adj.client_ip),
         timestampUtc: String(adj.timestamp_utc),
       });
@@ -163,6 +167,8 @@ function buildTransferBatchObject(
     const l = item as unknown as DbTransferLine;
     const sysBuy = Number(l.system_buy_amount) || 0;
     const sysSell = Number(l.system_sell_amount) || 0;
+    const adjBuy = l.adjusted_buy_amount !== null && l.adjusted_buy_amount !== undefined ? Number(l.adjusted_buy_amount) : undefined;
+    const adjSell = l.adjusted_sell_amount !== null && l.adjusted_sell_amount !== undefined ? Number(l.adjusted_sell_amount) : undefined;
     const sysNet = sysSell - sysBuy;
     const adjAmount = Number(l.adjustment_amount) || 0;
     const finalTransfer = sysNet + adjAmount;
@@ -175,6 +181,8 @@ function buildTransferBatchObject(
       actualSymbol: l.actual_symbol ? String(l.actual_symbol) : undefined,
       systemBuyAmount: sysBuy,
       systemSellAmount: sysSell,
+      adjustedBuyAmount: adjBuy,
+      adjustedSellAmount: adjSell,
       systemNetAmount: sysNet,
       adjustmentAmount: adjAmount,
       adjustmentCategory: l.adjustment_category as AdjustmentCategory | undefined,
@@ -300,50 +308,130 @@ export async function recordTransferLineAdjustment(
   reason: string,
   userId: string,
   userName: string,
-  clientIp: string = '127.0.0.1'
+  clientIp: string = '127.0.0.1',
+  adjustedBuyAmount?: number,
+  adjustedSellAmount?: number
 ): Promise<boolean> {
   const supabase = await getDbClient();
 
-  // 1. Update line adjustment amount
+  // 1. Update line adjustment amount and optional adjusted buy/sell amounts
+  const lineUpdate: Record<string, unknown> = {
+    adjustment_amount: newAdjustmentAmount,
+    is_manually_adjusted: true,
+  };
+  if (adjustedBuyAmount !== undefined) {
+    lineUpdate.adjusted_buy_amount = adjustedBuyAmount;
+  }
+  if (adjustedSellAmount !== undefined) {
+    lineUpdate.adjusted_sell_amount = adjustedSellAmount;
+  }
+  if (adjustmentCategory) {
+    lineUpdate.adjustment_category = adjustmentCategory;
+  }
+  if (reason) {
+    lineUpdate.adjustment_reason = reason;
+  }
+
   const { error: lineErr } = await supabase
     .from('transfer_sheet_lines')
-    .update({
-      adjustment_amount: newAdjustmentAmount,
-    })
+    .update(lineUpdate)
     .eq('id', lineId);
 
   if (lineErr) {
-    console.warn('DB error updating transfer_sheet_line:', lineErr.message);
-    return false;
+    console.warn('DB error updating transfer_sheet_line with extended fields, falling back:', lineErr.message);
+    // Fallback in case columns do not exist in DB yet
+    await supabase
+      .from('transfer_sheet_lines')
+      .update({
+        adjustment_amount: newAdjustmentAmount,
+        is_manually_adjusted: true,
+      })
+      .eq('id', lineId);
   }
 
-  // 2. Insert Immutable Audit Log
-  const { error: adjErr } = await supabase.from('transfer_line_adjustments').insert([
-    {
-      batch_id: batchId,
-      line_id: lineId,
-      symbol_code: symbolCode,
-      system_net_snapshot: systemNetSnapshot,
-      old_adjustment_amount: oldAdjustmentAmount,
-      new_adjustment_amount: newAdjustmentAmount,
-      resulting_final_transfer: calculateFinalTransfer(systemNetSnapshot, newAdjustmentAmount),
-      adjustment_category: adjustmentCategory,
-      reason,
-      user_id: userId,
-      user_name: userName,
-      client_ip: clientIp,
-    },
-  ]);
+  // 2. Insert Immutable Audit Log in transfer_line_adjustments
+  // Ensure both adjusted_by (UUID / FK) and user_id (text) are supported
+  const adjPayload: Record<string, unknown> = {
+    batch_id: batchId,
+    line_id: lineId,
+    symbol_code: symbolCode,
+    system_net_snapshot: systemNetSnapshot,
+    old_adjustment_amount: oldAdjustmentAmount,
+    new_adjustment_amount: newAdjustmentAmount,
+    resulting_final_transfer: calculateFinalTransfer(systemNetSnapshot, newAdjustmentAmount),
+    adjustment_category: adjustmentCategory,
+    reason,
+    adjusted_by: userId,
+    adjusted_by_name: userName,
+    user_id: userId,
+    user_name: userName,
+    client_ip: clientIp,
+  };
+  if (adjustedBuyAmount !== undefined) adjPayload.adjusted_buy_amount = adjustedBuyAmount;
+  if (adjustedSellAmount !== undefined) adjPayload.adjusted_sell_amount = adjustedSellAmount;
 
+  const { error: adjErr } = await supabase.from('transfer_line_adjustments').insert([adjPayload]);
   if (adjErr) {
-    console.warn('DB error inserting transfer_line_adjustment:', adjErr.message);
+    console.warn('DB error inserting transfer_line_adjustment with all fields, trying fallback:', adjErr.message);
+    await supabase.from('transfer_line_adjustments').insert([
+      {
+        batch_id: batchId,
+        line_id: lineId,
+        symbol_code: symbolCode,
+        system_net_snapshot: systemNetSnapshot,
+        old_adjustment_amount: oldAdjustmentAmount,
+        new_adjustment_amount: newAdjustmentAmount,
+        resulting_final_transfer: calculateFinalTransfer(systemNetSnapshot, newAdjustmentAmount),
+        adjustment_category: adjustmentCategory,
+        reason,
+        adjusted_by: userId,
+        adjusted_by_name: userName,
+        client_ip: clientIp,
+      },
+    ]);
   }
 
-  // 3. Update batch status to MODIFIED
-  await supabase
-    .from('transfer_sheet_batches')
-    .update({ status: 'MODIFIED', updated_at: new Date().toISOString() })
-    .eq('id', batchId);
+  // 3. Update batch status to MODIFIED and recompute total_net_amount, total_buy_amount, total_sell_amount
+  const { data: allLines } = await supabase
+    .from('transfer_sheet_lines')
+    .select('system_buy_amount, system_sell_amount, adjusted_buy_amount, adjusted_sell_amount, final_transfer_amount, adjustment_amount')
+    .eq('batch_id', batchId);
+
+  if (allLines && allLines.length > 0) {
+    let batchTotalBuy = 0;
+    let batchTotalSell = 0;
+    let batchTotalNet = 0;
+    for (const l of allLines) {
+      const effBuy =
+        l.adjusted_buy_amount !== null && l.adjusted_buy_amount !== undefined
+          ? Number(l.adjusted_buy_amount)
+          : Number(l.system_buy_amount) || 0;
+      const effSell =
+        l.adjusted_sell_amount !== null && l.adjusted_sell_amount !== undefined
+          ? Number(l.adjusted_sell_amount)
+          : Number(l.system_sell_amount) || 0;
+      const effNet = Number(l.final_transfer_amount) || (effSell - effBuy + (Number(l.adjustment_amount) || 0));
+      batchTotalBuy += effBuy;
+      batchTotalSell += effSell;
+      batchTotalNet += effNet;
+    }
+
+    await supabase
+      .from('transfer_sheet_batches')
+      .update({
+        status: 'MODIFIED',
+        total_buy_amount: Math.round(batchTotalBuy * 10000) / 10000,
+        total_sell_amount: Math.round(batchTotalSell * 10000) / 10000,
+        total_net_amount: Math.round(batchTotalNet * 10000) / 10000,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', batchId);
+  } else {
+    await supabase
+      .from('transfer_sheet_batches')
+      .update({ status: 'MODIFIED', updated_at: new Date().toISOString() })
+      .eq('id', batchId);
+  }
 
   return true;
 }

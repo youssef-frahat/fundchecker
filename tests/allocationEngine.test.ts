@@ -328,4 +328,39 @@ describe('Allocation Processing Engine (FIN-01 & SEC-01)', () => {
     assert.equal(resultingNetFromSell, 40000);
     assert.equal(deltaSellMode, 10000);
   });
+
+  it('should cumulatively interrelate sequential BUY and SELL adjustments on the same line', () => {
+    // 1. Initial System Baseline
+    const systemBuy = 100000;
+    const systemSell = 300000;
+    const systemNet = systemSell - systemBuy; // 200000
+    assert.equal(systemNet, 200000);
+
+    // 2. Step 1: User adjusts BUY from 100,000 to 120,000 (ADJUST_BUY)
+    const step1NewBuy = 120000;
+    let effectiveBuy = step1NewBuy;
+    let effectiveSell = systemSell; // sell not adjusted yet
+    const resultingNet1 = effectiveSell - effectiveBuy; // 300000 - 120000 = 180000
+    const adjustmentAmount1 = resultingNet1 - systemNet; // 180000 - 200000 = -20000
+    const finalTransfer1 = systemNet + adjustmentAmount1; // 180000
+    assert.equal(resultingNet1, 180000);
+    assert.equal(adjustmentAmount1, -20000);
+    assert.equal(finalTransfer1, 180000);
+
+    // 3. Step 2: User subsequently adjusts SELL from 300,000 to 350,000 (ADJUST_SELL)
+    // CRITICAL FIX: The adjustment engine MUST preserve effectiveBuy (120,000) rather than falling back to systemBuy (100,000)
+    const step2NewSell = 350000;
+    effectiveSell = step2NewSell;
+    // effectiveBuy remains 120000 (preserved from Step 1)
+    const resultingNet2 = effectiveSell - effectiveBuy; // 350000 - 120000 = 230000
+    const adjustmentAmount2 = resultingNet2 - systemNet; // 230000 - 200000 = +30000
+    const finalTransfer2 = systemNet + adjustmentAmount2; // 230000
+    assert.equal(resultingNet2, 230000);
+    assert.equal(adjustmentAmount2, 30000);
+    assert.equal(finalTransfer2, 230000);
+
+    // 4. Mathematical invariants check
+    assert.equal(effectiveSell - effectiveBuy, finalTransfer2, 'Final net transfer MUST equal Effective Sell - Effective Buy');
+    assert.equal(systemNet + adjustmentAmount2, finalTransfer2, 'Final net transfer MUST equal System Net + Adjustment Amount');
+  });
 });

@@ -47,7 +47,9 @@ interface TransferSheetViewProps {
     oldAdjustmentAmount: number,
     newAdjustmentAmount: number,
     adjustmentCategory: AdjustmentCategory,
-    reason: string
+    reason: string,
+    adjustedBuyAmount?: number,
+    adjustedSellAmount?: number
   ) => Promise<void>;
   onReviewSingleFund?: (symbolCode: string, newStatus: 'UNDER_REVIEW' | 'APPROVED') => void;
   onNewBatch?: () => void;
@@ -114,6 +116,11 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
     systemBuy: number;
     systemSell: number;
     systemNet: number;
+    adjustedBuy?: number;
+    adjustedSell?: number;
+    effectiveBuy: number;
+    effectiveSell: number;
+    finalTransferAmount: number;
     currentAdjustment: number;
     currentCategory: AdjustmentCategory;
   } | null>(null);
@@ -168,6 +175,42 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
     );
   }, [batch?.lines, nettingRows, referenceDataList]);
 
+  // Aggregate Batch Totals including cumulative adjustments
+  const summaryTotals = useMemo(() => {
+    let sumBuy = 0;
+    let sumSell = 0;
+    let sumSystemNet = 0;
+    let sumAdjustment = 0;
+    let sumFinal = 0;
+    let adjustedCount = 0;
+
+    for (const l of activeLines) {
+      const effBuy = l.adjustedBuyAmount !== undefined ? l.adjustedBuyAmount : (l.systemBuyAmount || 0);
+      const effSell = l.adjustedSellAmount !== undefined ? l.adjustedSellAmount : (l.systemSellAmount || 0);
+      const sysNet = l.systemNetAmount || 0;
+      const adj = l.adjustmentAmount || 0;
+      const fin = l.finalTransferAmount !== undefined ? l.finalTransferAmount : (sysNet + adj);
+
+      sumBuy += effBuy;
+      sumSell += effSell;
+      sumSystemNet += sysNet;
+      sumAdjustment += adj;
+      sumFinal += fin;
+      if (adj !== 0 || l.isManuallyAdjusted || l.adjustedBuyAmount !== undefined || l.adjustedSellAmount !== undefined) {
+        adjustedCount++;
+      }
+    }
+
+    return {
+      sumBuy: Math.round(sumBuy * 10000) / 10000,
+      sumSell: Math.round(sumSell * 10000) / 10000,
+      sumSystemNet: Math.round(sumSystemNet * 10000) / 10000,
+      sumAdjustment: Math.round(sumAdjustment * 10000) / 10000,
+      sumFinal: Math.round(sumFinal * 10000) / 10000,
+      adjustedCount,
+    };
+  }, [activeLines]);
+
   const handleOpenEditModal = (line: TransferSheetLine) => {
     const initialCategory: AdjustmentCategory =
       line.adjustmentCategory === 'ADJUST_BUY' ||
@@ -176,6 +219,13 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
         ? line.adjustmentCategory
         : 'ADJUST_NET_VALUE';
 
+    const effectiveBuy = line.adjustedBuyAmount !== undefined ? line.adjustedBuyAmount : (line.systemBuyAmount || 0);
+    const effectiveSell = line.adjustedSellAmount !== undefined ? line.adjustedSellAmount : (line.systemSellAmount || 0);
+    const currentFinal =
+      line.finalTransferAmount !== undefined
+        ? line.finalTransferAmount
+        : line.systemNetAmount + (line.adjustmentAmount || 0);
+
     setEditingModal({
       lineId: line.id,
       symbolCode: line.symbolCode,
@@ -183,21 +233,22 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
       systemBuy: line.systemBuyAmount || 0,
       systemSell: line.systemSellAmount || 0,
       systemNet: line.systemNetAmount,
+      adjustedBuy: line.adjustedBuyAmount,
+      adjustedSell: line.adjustedSellAmount,
+      effectiveBuy,
+      effectiveSell,
+      finalTransferAmount: currentFinal,
       currentAdjustment: line.adjustmentAmount || 0,
       currentCategory: initialCategory,
     });
     setAdjustmentCategory(initialCategory);
 
     if (initialCategory === 'ADJUST_BUY') {
-      setAdjustmentAmountInput(String(line.systemBuyAmount || 0));
+      setAdjustmentAmountInput(String(effectiveBuy));
     } else if (initialCategory === 'ADJUST_SELL') {
-      setAdjustmentAmountInput(String(line.systemSellAmount || 0));
+      setAdjustmentAmountInput(String(effectiveSell));
     } else {
-      const curFinal =
-        line.finalTransferAmount !== undefined
-          ? line.finalTransferAmount
-          : line.systemNetAmount + (line.adjustmentAmount || 0);
-      setAdjustmentAmountInput(String(curFinal));
+      setAdjustmentAmountInput(String(currentFinal));
     }
 
     setAdjustmentReason(line.adjustmentReason || '');
@@ -208,11 +259,11 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
     setAdjustmentCategory(newCat);
     if (!editingModal) return;
     if (newCat === 'ADJUST_BUY') {
-      setAdjustmentAmountInput(String(editingModal.systemBuy));
+      setAdjustmentAmountInput(String(editingModal.effectiveBuy));
     } else if (newCat === 'ADJUST_SELL') {
-      setAdjustmentAmountInput(String(editingModal.systemSell));
+      setAdjustmentAmountInput(String(editingModal.effectiveSell));
     } else {
-      setAdjustmentAmountInput(String(editingModal.systemNet + editingModal.currentAdjustment));
+      setAdjustmentAmountInput(String(editingModal.finalTransferAmount));
     }
   };
 
@@ -229,13 +280,18 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
     }
 
     let calculatedAdjustmentDelta = 0;
+    let newAdjustedBuy = editingModal.adjustedBuy;
+    let newAdjustedSell = editingModal.adjustedSell;
+
     if (adjustmentCategory === 'ADJUST_BUY') {
-      // Net = Sell - newBuy => Delta = Net - systemNet
-      const resultingNet = editingModal.systemSell - inputVal;
+      newAdjustedBuy = inputVal;
+      const activeSell = newAdjustedSell !== undefined ? newAdjustedSell : editingModal.systemSell;
+      const resultingNet = Math.round((activeSell - newAdjustedBuy) * 10000) / 10000;
       calculatedAdjustmentDelta = Math.round((resultingNet - editingModal.systemNet) * 10000) / 10000;
     } else if (adjustmentCategory === 'ADJUST_SELL') {
-      // Net = newSell - Buy => Delta = Net - systemNet
-      const resultingNet = inputVal - editingModal.systemBuy;
+      newAdjustedSell = inputVal;
+      const activeBuy = newAdjustedBuy !== undefined ? newAdjustedBuy : editingModal.systemBuy;
+      const resultingNet = Math.round((newAdjustedSell - activeBuy) * 10000) / 10000;
       calculatedAdjustmentDelta = Math.round((resultingNet - editingModal.systemNet) * 10000) / 10000;
     } else {
       // ADJUST_NET_VALUE
@@ -252,7 +308,9 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
           editingModal.currentAdjustment,
           calculatedAdjustmentDelta,
           adjustmentCategory,
-          adjustmentReason.trim()
+          adjustmentReason.trim(),
+          newAdjustedBuy,
+          newAdjustedSell
         );
       }
       setEditingModal(null);
@@ -360,11 +418,11 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
             onClick={() => {
               const csvContent =
                 'data:text/csv;charset=utf-8,' +
-                ['Symbol Code,Fund Name,System Buy,System Sell,System Net Transfer,Adjustment Amount,Final Transfer Amount']
+                ['Symbol Code,Fund Name,Buy Amount (EGP),Sell Amount (EGP),System Net Transfer,Adjustment Amount,Final Transfer Amount']
                   .concat(
                     activeLines.map(
                       (l) =>
-                        `"${l.symbolCode}","${l.symbolName}",${l.systemBuyAmount},${l.systemSellAmount},${l.systemNetAmount},${l.adjustmentAmount},${l.finalTransferAmount}`
+                        `"${l.symbolCode}","${l.symbolName}",${l.adjustedBuyAmount !== undefined ? l.adjustedBuyAmount : l.systemBuyAmount},${l.adjustedSellAmount !== undefined ? l.adjustedSellAmount : l.systemSellAmount},${l.systemNetAmount},${l.adjustmentAmount},${l.finalTransferAmount}`
                     )
                   )
                   .join('\n');
@@ -427,6 +485,83 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
       </div>
 
 
+      {/* Batch Overview KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Buy Card */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-semibold text-slate-500 block uppercase tracking-wider">
+              Total Buy (تحويل للصندوق)
+            </span>
+            <span className="text-lg font-bold font-mono text-slate-900 mt-0.5 block">
+              {formatFinancialNumber(summaryTotals.sumBuy)} EGP
+            </span>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">
+              Effective across {activeLines.length} funds
+            </span>
+          </div>
+          <div className="p-2.5 bg-blue-50 rounded-xl border border-blue-100 text-blue-600">
+            <DollarSign className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Total Sell Card */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-semibold text-slate-500 block uppercase tracking-wider">
+              Total Sell (استقبال من الصندوق)
+            </span>
+            <span className="text-lg font-bold font-mono text-slate-900 mt-0.5 block">
+              {formatFinancialNumber(summaryTotals.sumSell)} EGP
+            </span>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">
+              Effective across {activeLines.length} funds
+            </span>
+          </div>
+          <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-100 text-amber-600">
+            <DollarSign className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Total Adjustments Card */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-semibold text-slate-500 block uppercase tracking-wider">
+              Manual Adjustments (التسويات)
+            </span>
+            <span className={`text-lg font-bold font-mono mt-0.5 block ${summaryTotals.sumAdjustment !== 0 ? formatAccountingUI(summaryTotals.sumAdjustment).inlineColor : 'text-slate-900'}`}>
+              {summaryTotals.sumAdjustment !== 0 ? formatAccountingUI(summaryTotals.sumAdjustment).text : '0.00'} EGP
+            </span>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">
+              {summaryTotals.adjustedCount} fund(s) manually adjusted
+            </span>
+          </div>
+          <div className="p-2.5 bg-purple-50 rounded-xl border border-purple-100 text-purple-600">
+            <Edit3 className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Final Net Transfer Card */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-semibold text-slate-500 block uppercase tracking-wider">
+              Final Net Transfer (الصافي)
+            </span>
+            <span className="text-lg font-bold font-mono mt-0.5 block">
+              <span className={`inline-block px-2 py-0.5 rounded text-sm ${formatAccountingUI(summaryTotals.sumFinal).colorClass}`}>
+                {formatAccountingUI(summaryTotals.sumFinal).text} EGP
+              </span>
+            </span>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">
+              {summaryTotals.sumFinal > 0 ? 'Net receive from funds' : summaryTotals.sumFinal < 0 ? 'Net transfer to funds' : 'Net zero transfer'}
+            </span>
+          </div>
+          <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 text-emerald-600">
+            <Layers className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
       {/* Main Netting Table */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -435,8 +570,8 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
               <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
                 <th className="py-3.5 px-4">Fund Code</th>
                 <th className="py-3.5 px-4">Fund Name</th>
-                <th className="py-3.5 px-4 text-right">System Buy (EGP)</th>
-                <th className="py-3.5 px-4 text-right">System Sell (EGP)</th>
+                <th className="py-3.5 px-4 text-right">Buy Amount (EGP)</th>
+                <th className="py-3.5 px-4 text-right">Sell Amount (EGP)</th>
                 <th className="py-3.5 px-4 text-right">System Net (EGP)</th>
                 <th className="py-3.5 px-4 text-right">Adjustment (EGP)</th>
                 <th className="py-3.5 px-4 text-right">Final Transfer (EGP)</th>
@@ -483,14 +618,42 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                         {line.symbolName}
                       </td>
 
-                      {/* 1. System Buy (Immutable) */}
+                      {/* 1. Effective Buy Amount */}
                       <td className="py-3 px-4 text-right font-mono text-slate-800">
-                        {formatFinancialNumber(line.systemBuyAmount)}
+                        <div>
+                          <span>
+                            {formatFinancialNumber(
+                              line.adjustedBuyAmount !== undefined ? line.adjustedBuyAmount : line.systemBuyAmount
+                            )}
+                          </span>
+                          {line.adjustedBuyAmount !== undefined && line.adjustedBuyAmount !== line.systemBuyAmount && (
+                            <span
+                              className="block text-[10px] text-blue-600 font-sans"
+                              title={`Original System Buy: ${formatFinancialNumber(line.systemBuyAmount)}`}
+                            >
+                              (Orig: {formatFinancialNumber(line.systemBuyAmount)})
+                            </span>
+                          )}
+                        </div>
                       </td>
 
-                      {/* 2. System Sell (Immutable) */}
+                      {/* 2. Effective Sell Amount */}
                       <td className="py-3 px-4 text-right font-mono text-slate-800">
-                        {formatFinancialNumber(line.systemSellAmount)}
+                        <div>
+                          <span>
+                            {formatFinancialNumber(
+                              line.adjustedSellAmount !== undefined ? line.adjustedSellAmount : line.systemSellAmount
+                            )}
+                          </span>
+                          {line.adjustedSellAmount !== undefined && line.adjustedSellAmount !== line.systemSellAmount && (
+                            <span
+                              className="block text-[10px] text-amber-600 font-sans"
+                              title={`Original System Sell: ${formatFinancialNumber(line.systemSellAmount)}`}
+                            >
+                              (Orig: {formatFinancialNumber(line.systemSellAmount)})
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* 3. System Net (Immutable) - Accounting Red/Green */}
@@ -586,6 +749,39 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                 })
               )}
             </tbody>
+            {activeLines.length > 0 && (
+              <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-300 text-slate-900">
+                <tr>
+                  <td className="py-3 px-4 uppercase text-[11px] tracking-wider" colSpan={2}>
+                    Total Summary ({activeLines.length} Funds)
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-slate-900">
+                    {formatFinancialNumber(summaryTotals.sumBuy)}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-slate-900">
+                    {formatFinancialNumber(summaryTotals.sumSell)}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono">
+                    <span className={`inline-block px-2 py-0.5 rounded text-xs ${formatAccountingUI(summaryTotals.sumSystemNet).colorClass}`}>
+                      {formatAccountingUI(summaryTotals.sumSystemNet).text}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono">
+                    <span className={`inline-block px-2 py-0.5 rounded text-xs ${summaryTotals.sumAdjustment !== 0 ? formatAccountingUI(summaryTotals.sumAdjustment).colorClass : 'text-slate-400'}`}>
+                      {summaryTotals.sumAdjustment !== 0 ? formatAccountingUI(summaryTotals.sumAdjustment).text : '0.00'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono">
+                    <span className={`inline-block px-2.5 py-1 rounded text-xs ${formatAccountingUI(summaryTotals.sumFinal).colorClass}`}>
+                      {formatAccountingUI(summaryTotals.sumFinal).text}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-center text-[10px] text-slate-500 font-normal">
+                    {summaryTotals.adjustedCount > 0 ? `${summaryTotals.adjustedCount} adjusted` : 'All system'}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
@@ -612,14 +808,18 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
 
             {(() => {
               const parsedInput = parseFloat(adjustmentAmountInput) || 0;
+              let previewBuy = editingModal.adjustedBuy !== undefined ? editingModal.adjustedBuy : editingModal.systemBuy;
+              let previewSell = editingModal.adjustedSell !== undefined ? editingModal.adjustedSell : editingModal.systemSell;
               let previewFinal = editingModal.systemNet;
               let previewDelta = 0;
 
               if (adjustmentCategory === 'ADJUST_BUY') {
-                previewFinal = Math.round((editingModal.systemSell - parsedInput) * 10000) / 10000;
+                previewBuy = parsedInput;
+                previewFinal = Math.round((previewSell - previewBuy) * 10000) / 10000;
                 previewDelta = Math.round((previewFinal - editingModal.systemNet) * 10000) / 10000;
               } else if (adjustmentCategory === 'ADJUST_SELL') {
-                previewFinal = Math.round((parsedInput - editingModal.systemBuy) * 10000) / 10000;
+                previewSell = parsedInput;
+                previewFinal = Math.round((previewSell - previewBuy) * 10000) / 10000;
                 previewDelta = Math.round((previewFinal - editingModal.systemNet) * 10000) / 10000;
               } else {
                 previewFinal = Math.round(parsedInput * 10000) / 10000;
@@ -628,19 +828,32 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
 
               return (
                 <div className="space-y-4">
-                  {/* System Baseline (Immutable) */}
+                  {/* System Baseline vs Effective (Cumulative) */}
                   <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-3 gap-2 text-center text-xs">
                     <div>
-                      <span className="text-slate-500 block text-[10px] uppercase font-bold">System Buy</span>
-                      <span className="font-mono font-semibold text-slate-800">{formatFinancialNumber(editingModal.systemBuy)} EGP</span>
+                      <span className="text-slate-500 block text-[10px] uppercase font-bold">Current Buy</span>
+                      <span className="font-mono font-semibold text-slate-800">{formatFinancialNumber(editingModal.effectiveBuy)} EGP</span>
+                      {editingModal.adjustedBuy !== undefined && editingModal.adjustedBuy !== editingModal.systemBuy && (
+                        <span className="block text-[9px] text-blue-600 font-sans">
+                          (Baseline: {formatFinancialNumber(editingModal.systemBuy)})
+                        </span>
+                      )}
                     </div>
                     <div>
-                      <span className="text-slate-500 block text-[10px] uppercase font-bold">System Sell</span>
-                      <span className="font-mono font-semibold text-slate-800">{formatFinancialNumber(editingModal.systemSell)} EGP</span>
+                      <span className="text-slate-500 block text-[10px] uppercase font-bold">Current Sell</span>
+                      <span className="font-mono font-semibold text-slate-800">{formatFinancialNumber(editingModal.effectiveSell)} EGP</span>
+                      {editingModal.adjustedSell !== undefined && editingModal.adjustedSell !== editingModal.systemSell && (
+                        <span className="block text-[9px] text-amber-600 font-sans">
+                          (Baseline: {formatFinancialNumber(editingModal.systemSell)})
+                        </span>
+                      )}
                     </div>
                     <div>
                       <span className="text-slate-500 block text-[10px] uppercase font-bold">System Net</span>
                       <span className="font-mono font-bold text-slate-900">{formatFinancialNumber(editingModal.systemNet)} EGP</span>
+                      <span className="block text-[9px] text-slate-500 font-sans">
+                        (Cur Net: {formatFinancialNumber(editingModal.finalTransferAmount)})
+                      </span>
                     </div>
                   </div>
 
@@ -654,7 +867,7 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                       onChange={(e) => handleCategoryChange(e.target.value as AdjustmentCategory)}
                       className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="ADJUST_NET_VALUE">Adjust Net Value (تعديل صافي القيمة)</option>
+                      <option value="ADJUST_NET_VALUE">Adjust Net Value (تعديل صافي القيمة مباشرة)</option>
                       <option value="ADJUST_BUY">Adjust Buy (تعديل إجمالي الشراء)</option>
                       <option value="ADJUST_SELL">Adjust Sell (تعديل إجمالي البيع)</option>
                     </select>
@@ -678,17 +891,29 @@ export const TransferSheetView: React.FC<TransferSheetViewProps> = ({
                     />
                     <p className="text-[11px] text-slate-500 mt-1">
                       {adjustmentCategory === 'ADJUST_BUY' &&
-                        `Current Buy: ${formatFinancialNumber(editingModal.systemBuy)} EGP. Net will recalculate as: System Sell (${formatFinancialNumber(editingModal.systemSell)}) − Adjusted Buy.`}
+                        `Effective Sell: ${formatFinancialNumber(editingModal.effectiveSell)} EGP. New Net calculates as: Sell (${formatFinancialNumber(editingModal.effectiveSell)}) − New Buy.`}
                       {adjustmentCategory === 'ADJUST_SELL' &&
-                        `Current Sell: ${formatFinancialNumber(editingModal.systemSell)} EGP. Net will recalculate as: Adjusted Sell − System Buy (${formatFinancialNumber(editingModal.systemBuy)}).`}
+                        `Effective Buy: ${formatFinancialNumber(editingModal.effectiveBuy)} EGP. New Net calculates as: New Sell − Buy (${formatFinancialNumber(editingModal.effectiveBuy)}).`}
                       {adjustmentCategory === 'ADJUST_NET_VALUE' &&
-                        `Directly sets final transfer amount. Delta is: Target Net − System Net.`}
+                        `Directly sets target net transfer amount. Delta is: Target Net − Baseline Net.`}
                     </p>
                   </div>
 
                   {/* Real-Time Calculation & Delta Breakdown */}
                   <div className="bg-blue-50 p-3 rounded-xl border border-blue-200 space-y-1.5">
                     <div className="flex justify-between items-center text-xs">
+                      <span className="text-blue-900 font-bold">Resulting Buy:</span>
+                      <span className="font-mono font-semibold text-blue-950">
+                        {formatFinancialNumber(previewBuy)} EGP
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-blue-900 font-bold">Resulting Sell:</span>
+                      <span className="font-mono font-semibold text-blue-950">
+                        {formatFinancialNumber(previewSell)} EGP
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs pt-1 border-t border-blue-200/60">
                       <span className="text-blue-900 font-bold">Resulting Final Transfer:</span>
                       <span className="font-mono font-bold text-blue-900 text-sm">
                         {formatFinancialNumber(previewFinal)} EGP

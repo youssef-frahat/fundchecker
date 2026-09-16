@@ -80,8 +80,8 @@ export function useTransferWorkspace({
           symbolName: l.symbolName,
           actualSymbol: l.actualSymbol || l.symbolCode,
           currency: 'EGP' as const,
-          buyTotal: l.systemBuyAmount,
-          sellTotal: l.systemSellAmount,
+          buyTotal: l.adjustedBuyAmount !== undefined ? l.adjustedBuyAmount : l.systemBuyAmount,
+          sellTotal: l.adjustedSellAmount !== undefined ? l.adjustedSellAmount : l.systemSellAmount,
           netAmount: l.finalTransferAmount,
           status: (l.finalTransferAmount > 0
             ? 'POSITIVE'
@@ -181,7 +181,9 @@ export function useTransferWorkspace({
     oldAdjustmentAmount: number,
     newAdjustmentAmount: number,
     adjustmentCategory: AdjustmentCategory,
-    reason: string
+    reason: string,
+    adjustedBuyAmount?: number,
+    adjustedSellAmount?: number
   ) => {
     if (!currentTransferBatch) return;
     const res = await adjustTransferLineAction(
@@ -192,7 +194,9 @@ export function useTransferWorkspace({
       oldAdjustmentAmount,
       newAdjustmentAmount,
       adjustmentCategory,
-      reason
+      reason,
+      adjustedBuyAmount,
+      adjustedSellAmount
     );
     if (!res.success) {
       throw new Error(res.error || 'Failed to adjust line');

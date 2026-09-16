@@ -148,7 +148,9 @@ export async function adjustTransferLineAction(
   oldAdjustmentAmount: number,
   newAdjustmentAmount: number,
   adjustmentCategory: AdjustmentCategory,
-  reason: string
+  reason: string,
+  adjustedBuyAmount?: number,
+  adjustedSellAmount?: number
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const currentUser = await getAuthenticatedServerUser();
@@ -211,7 +213,9 @@ export async function adjustTransferLineAction(
       reason.trim(),
       currentUser.id,
       currentUser.fullName,
-      clientIp
+      clientIp,
+      adjustedBuyAmount,
+      adjustedSellAmount
     );
 
     if (!recorded) {
@@ -230,6 +234,8 @@ export async function adjustTransferLineAction(
       oldValues: { adjustmentAmount: oldAdjustmentAmount },
       newValues: {
         adjustmentAmount: newAdjustmentAmount,
+        adjustedBuyAmount,
+        adjustedSellAmount,
         delta: subFinancial(newAdjustmentAmount, oldAdjustmentAmount),
         adjustmentCategory,
         reason: reason.trim(),

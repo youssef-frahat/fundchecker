@@ -232,7 +232,9 @@ export interface TransferSheetLine {
   systemBuyAmount: number;     // Immutable market execution
   systemSellAmount: number;    // Immutable market execution
   systemNetAmount: number;     // systemSellAmount - systemBuyAmount
-  adjustmentAmount: number;    // Only field edited by operations (default 0)
+  adjustedBuyAmount?: number;  // Operational adjustment to buy
+  adjustedSellAmount?: number; // Operational adjustment to sell
+  adjustmentAmount: number;    // Net adjustment amount (default 0)
   adjustmentCategory?: AdjustmentCategory;
   adjustmentReason?: string;
   finalTransferAmount: number; // systemNetAmount + adjustmentAmount
@@ -254,6 +256,8 @@ export interface TransferLineAdjustment {
   resultingFinalTransfer: number;
   adjustmentCategory: AdjustmentCategory;
   reason: string;
+  adjustedBuyAmount?: number;
+  adjustedSellAmount?: number;
   userId: string;
   userName: string;
   clientIp: string;

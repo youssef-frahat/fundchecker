@@ -852,8 +852,10 @@ export async function exportTransferSheetBatchExcel(
   let totalFinal = 0;
 
   lines.forEach((line) => {
-    totalBuy += line.systemBuyAmount || 0;
-    totalSell += line.systemSellAmount || 0;
+    const effectiveBuy = line.adjustedBuyAmount !== undefined ? line.adjustedBuyAmount : (line.systemBuyAmount || 0);
+    const effectiveSell = line.adjustedSellAmount !== undefined ? line.adjustedSellAmount : (line.systemSellAmount || 0);
+    totalBuy += effectiveBuy;
+    totalSell += effectiveSell;
     totalNet += line.systemNetAmount || 0;
     totalAdjustment += line.adjustmentAmount || 0;
     totalFinal += line.finalTransferAmount || 0;
@@ -869,8 +871,8 @@ export async function exportTransferSheetBatchExcel(
       symbolCode: line.symbolCode,
       symbolName: line.symbolName,
       actualSymbol: line.actualSymbol || '—',
-      systemBuy: line.systemBuyAmount,
-      systemSell: line.systemSellAmount,
+      systemBuy: effectiveBuy,
+      systemSell: effectiveSell,
       systemNet: line.systemNetAmount,
       adjustment: line.adjustmentAmount || 0,
       finalTransfer: line.finalTransferAmount,
